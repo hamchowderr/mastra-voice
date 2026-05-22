@@ -49,6 +49,21 @@ curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
 
 For streaming responses, use `/stream` instead of `/generate`. Full OpenAPI spec at `/api/openapi.json`. Interactive docs at `/swagger-ui` (dev only).
 
+#### Working memory (persist context per user)
+
+The `voiceAssistant` has **working memory** enabled (resource-scoped, leaner template — see `src/mastra/lib/memory.ts`). It applies to the **text** path below; pass `memory.resource` (a stable user ID) and `memory.thread` (the conversation ID) to persist across conversations:
+
+```bash
+curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages":[{"role":"user","content":"What time is it?"}],
+    "memory":{"resource":"user-alice-456","thread":"conversation-123"}
+  }'
+```
+
+**Note:** the realtime `npm run voice:cli` path uses Gemini Live STS, a separate pipeline that bypasses these memory processors — working memory applies to the text `/generate` path, not the live audio stream. Semantic recall is intentionally off (latency).
+
 ### A2A (Agent-to-Agent Protocol)
 
 Google's open standard for agent-to-agent communication. JSON-RPC over HTTP.
