@@ -1,3 +1,12 @@
+# Self-contained agent stack: Mastra (server + Studio) + Postgres/pgvector + Dolt.
+# One `docker compose up` brings up a complete, portable voice agent. Deploys as
+# a single Coolify "Docker Compose" resource (only `mastra` gets a public domain;
+# postgres + dolt stay private on the internal network).
+#
+# Secrets come from .env / Coolify env (never commit them):
+#   APP_SECRET, POSTGRES_PASSWORD, DOLT_PASSWORD, GOOGLE_API_KEY (voice), and an
+#   LLM key (ANTHROPIC_API_KEY / OPENAI_API_KEY). See .env.example.
+
 services:
   mastra:
     build:
@@ -6,17 +15,24 @@ services:
     container_name: mastra
     restart: unless-stopped
     ports:
-      - "4111:4111"
+      - "4111:4111" # Coolify assigns the public domain to this service
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - NODE_ENV=production
-      # Override localhost → host.docker.internal so the container can reach
-      # Supabase services running on the host (127.0.0.1 resolves to the container inside Docker)
-      - SUPABASE_URL=http://host.docker.internal:54321
-      - SUPABASE_DB_URL=postgresql://postgres:postgres@host.docker.internal:54322/postgres
+      # Mastra memory + RAG → the postgres service (private, internal network)
+      - SUPABASE_DB_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      # Versioned business data → the dolt service (private, internal network)
+      - DOLT_HOST=dolt
+      - DOLT_PORT=3306
+      - DOLT_USER=root
+      - DOLT_PASSWORD=${DOLT_PASSWORD}
+      - DOLT_DATABASE=${DOLT_DATABASE:-appdb}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dolt:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -28,10 +44,48 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:4111/health"]
       interval: 30s
       timeout: 5s
-      start_period: 15s
+      start_period: 20s
       retries: 3
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # enables the `vector` extension on first init
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # no published port → reachable only as `postgres` on the internal network
+
+  dolt:
+    image: dolthub/dolt-sql-server:latest
+    restart: unless-stopped
+    environment:
+      # allow root from any host on the internal network (default is localhost-only,
+      # which denies the mastra container). Applied on first init only.
+      - DOLT_ROOT_HOST=%
+      - DOLT_ROOT_PASSWORD=${DOLT_PASSWORD}
+    volumes:
+      - doltdata:/var/lib/dolt # versioned DB + full commit history (persist!)
+    healthcheck:
+      test: ["CMD-SHELL", "dolt sql -q 'SELECT 1' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # no published port → reachable only as `dolt` on the internal network
+
+volumes:
+  pgdata: {}
+  doltdata: {}

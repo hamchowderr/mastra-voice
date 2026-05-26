@@ -1,11 +1,12 @@
 import { Agent } from '@mastra/core/agent';
-import { Memory } from '@mastra/memory';
 import { GeminiLiveVoice } from '@mastra/voice-google-gemini-live';
 
 import { env } from '../../lib/env';
 import { patchGeminiLiveForAudio } from '../lib/gemini-live-patch';
 import { getCurrentTime, evaluateMath } from '../tools/time-and-math';
 import { answerRelevancyScorer } from '../scorers/_example.scorers';
+import { defaultInputProcessors, defaultOutputProcessors } from '../lib/processors';
+import { createDefaultMemory } from '../lib/memory';
 
 /**
  * Voice Assistant — canonical example for the voice template.
@@ -34,7 +35,11 @@ Rules:
 - Avoid lists, bullet points, or anything that would sound awkward when spoken.`,
   model: 'anthropic/claude-haiku-4-5',
   tools: { getCurrentTime, evaluateMath },
-  memory: new Memory(),
+  memory: createDefaultMemory(),
+  // Shared safety/hygiene baseline — applies to the text-mode generate path
+  // (the realtime Gemini Live STS stream below is separate). See lib/processors.ts.
+  inputProcessors: defaultInputProcessors,
+  outputProcessors: defaultOutputProcessors,
   voice: (() => {
     const v = new GeminiLiveVoice({
       apiKey: env.GOOGLE_API_KEY,
