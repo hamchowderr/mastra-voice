@@ -18,6 +18,14 @@ const envSchema = z
       .url()
       .refine((v) => v.startsWith('postgres'), 'Must be a postgres:// connection string'),
 
+    // Dolt (versioned business data) — the compose `dolt` service. Optional so
+    // the app boots without Dolt; the Dolt tools error clearly if it's missing.
+    DOLT_HOST: z.string().optional(),
+    DOLT_PORT: z.coerce.number().int().optional(),
+    DOLT_USER: z.string().optional(),
+    DOLT_PASSWORD: z.string().optional(),
+    DOLT_DATABASE: z.string().optional(),
+
     ANTHROPIC_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
@@ -36,6 +44,11 @@ const envSchema = z
 
     MASTRA_TELEMETRY_DISABLED: z.string().optional(),
     MASTRA_CLOUD_ACCESS_TOKEN: z.string().optional(),
+
+    // Shared HMAC secret for JWT auth (@mastra/auth). When set, the server
+    // gates all /api/* routes AND Studio behind a Bearer JWT signed with this
+    // secret. Leave unset for open local dev. Must be HS256-safe (>=32 chars).
+    MASTRA_JWT_SECRET: z.string().min(32, 'MASTRA_JWT_SECRET must be at least 32 chars').optional(),
   })
   .refine(
     (e) => Boolean(e.ANTHROPIC_API_KEY || e.OPENAI_API_KEY || e.GOOGLE_GENERATIVE_AI_API_KEY),

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.58",
+    "@mastra/auth": "^1.0.2",
     "@mastra/core": "^1.36.0",
     "@mastra/duckdb": "^1.4.0",
     "@mastra/editor": "^0.9.0",
@@ -33,6 +34,7 @@
     "@mastra/pg": "^1.11.1",
     "@mastra/voice-google-gemini-live": "^0.11.4",
     "@supabase/supabase-js": "^2.105.1",
+    "mysql2": "^3.22.3",
     "zod": "^4.4.2"
   },
   "devDependencies": {
