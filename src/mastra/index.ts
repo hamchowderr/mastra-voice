@@ -11,7 +11,7 @@ import { PinoLogger } from '@mastra/loggers';
 import { PostgresStore } from '@mastra/pg';
 import { DuckDBStore } from '@mastra/duckdb';
 import { MastraCompositeStore } from '@mastra/core/storage';
-import { Observability, DefaultExporter, SensitiveDataFilter } from '@mastra/observability';
+import { Observability, DefaultExporter, SensitiveDataFilter, MastraPlatformExporter } from '@mastra/observability';
 import { MastraEditor } from '@mastra/editor';
 import { MCPServer } from '@mastra/mcp';
 import { MastraJwtAuth } from '@mastra/auth';
@@ -70,7 +70,14 @@ export const mastra = new Mastra({
     configs: {
       default: {
         serviceName: 'mastra',
-        exporters: [new DefaultExporter()],
+        // Local traces always; also ship to hosted Mastra Observe when creds are set
+        // (MASTRA_PLATFORM_ACCESS_TOKEN + MASTRA_PROJECT_ID) — no-op otherwise.
+        exporters: [
+          new DefaultExporter(),
+          ...(process.env.MASTRA_PLATFORM_ACCESS_TOKEN && process.env.MASTRA_PROJECT_ID
+            ? [new MastraPlatformExporter()]
+            : []),
+        ],
         spanOutputProcessors: [new SensitiveDataFilter()],
       },
     },
