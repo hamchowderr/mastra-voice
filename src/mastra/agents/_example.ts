@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import type { MastraVoice } from '@mastra/core/voice';
 import { GeminiLiveVoice } from '@mastra/voice-google-gemini-live';
 
 import { env } from '../../lib/env';
@@ -49,7 +50,12 @@ Rules:
       speaker: env.GEMINI_LIVE_SPEAKER as any,
     });
     patchGeminiLiveForAudio(v);
-    return v;
+    // Type bridge: @mastra/voice-google-gemini-live@0.14.1 (latest) vendors a
+    // pre-1.47 MastraVoice type (5 generics) that doesn't structurally match
+    // core 1.47's MastraVoice (6 generics + private brand). The runtime class IS
+    // a real MastraVoice (mastra build passes); only tsc rejects the stale brand.
+    // Remove this cast once the voice package catches up to core 1.47.
+    return v as unknown as MastraVoice;
   })(),
   scorers: {
     answerRelevancy: {
