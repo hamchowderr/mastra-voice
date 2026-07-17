@@ -30,13 +30,6 @@ const envSchema = z
     OPENAI_API_KEY: z.string().optional(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
 
-    // Voice (Gemini Live) — separate from GOOGLE_GENERATIVE_AI_API_KEY (different SDK convention)
-    GOOGLE_API_KEY: z.string().min(1, 'GOOGLE_API_KEY required for voice integration'),
-    GEMINI_LIVE_MODEL: z.string().min(1).default('gemini-3.1-flash-live-preview'),
-    GEMINI_LIVE_SPEAKER: z
-      .enum(['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'])
-      .default('Puck'),
-
     USE_AIMOCK: boolish.default(false),
     AIMOCK_URL: z.string().url().default('http://localhost:4010'),
 

@@ -8,7 +8,6 @@
     "build": "mastra build",
     "start": "mastra start",
     "typecheck": "tsc --noEmit",
-    "voice:cli": "node --env-file=.env --import tsx/esm scripts/voice-cli.ts",
     "eval": "node --env-file=.env --import tsx/esm scripts/eval.ts",
     "score:list": "mastra scorers list"
   },
@@ -30,10 +29,8 @@
     "@mastra/loggers": "^1.2.0",
     "@mastra/mcp": "^1.12.0",
     "@mastra/memory": "^1.21.2",
-    "@mastra/node-audio": "^0.1.7",
     "@mastra/observability": "^1.15.2",
     "@mastra/pg": "^1.14.2",
-    "@mastra/voice-google-gemini-live": "^0.14.1",
     "@supabase/supabase-js": "^2.105.1",
     "mysql2": "^3.22.3",
     "zod": "^4.4.2"

@@ -4,8 +4,8 @@
 # postgres + dolt stay private on the internal network).
 #
 # Secrets come from .env / Coolify env (never commit them):
-#   APP_SECRET, POSTGRES_PASSWORD, DOLT_PASSWORD, GOOGLE_API_KEY (voice), and an
-#   LLM key (ANTHROPIC_API_KEY / OPENAI_API_KEY). See .env.example.
+#   APP_SECRET, POSTGRES_PASSWORD, DOLT_PASSWORD, and an LLM key
+#   (ANTHROPIC_API_KEY / OPENAI_API_KEY). See .env.example.
 
 services:
   mastra:
