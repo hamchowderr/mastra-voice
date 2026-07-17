@@ -9,7 +9,6 @@ configureAIMock();
 import { Mastra } from '@mastra/core/mastra';
 import { PinoLogger } from '@mastra/loggers';
 import { PostgresStore } from '@mastra/pg';
-import { DuckDBStore } from '@mastra/duckdb';
 import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, DefaultExporter, SensitiveDataFilter, MastraPlatformExporter } from '@mastra/observability';
 import { MastraEditor } from '@mastra/editor';
@@ -54,13 +53,15 @@ export const mastra = new Mastra({
   agents: { voiceAssistant: voiceAssistantAgent },
   scorers: { answerRelevancyScorer },
   mcpServers: { voiceMcp: mcpServer },
+  // Postgres serves every slot. Observability deliberately has no `domains`
+  // override: it falls through to `default`, reusing the ONE pgStore instance
+  // above. Do not give it its own store — a single-writer store (DuckDB) cannot
+  // serve the two-process model, since the LiveKit worker writes spans for every
+  // voice turn from a separate process (and its job subprocesses from more).
   storage: new MastraCompositeStore({
     id: 'composite-storage',
     default: pgStore,
     editor: pgStore,
-    domains: {
-      observability: await new DuckDBStore().getStore('observability'),
-    },
   }),
   logger: new PinoLogger({
     name: 'Mastra',

@@ -110,16 +110,14 @@ import { createAnswerRelevancyScorer } from '@mastra/evals/scorers/prebuilt';
 
 ## Storage
 
-The Mastra instance uses a composite store:
-- **default domain** → `PostgresStore` (Supabase Postgres via `SUPABASE_DB_URL`)
-- **observability domain** → `DuckDBStore`
-
-Both require an explicit `id` field:
+Every domain routes to one `PostgresStore` (Supabase Postgres via `SUPABASE_DB_URL`). It requires an explicit `id`:
 ```typescript
 new PostgresStore({ id: 'mastra-storage', connectionString: env.SUPABASE_DB_URL })
 ```
 
-`DuckDBStore` requires glibc. Do not run it in Alpine-based containers — use `node:22-slim`.
+**Share the ONE `pgStore` instance across every slot.** Two instances against the same DB race on first boot creating the shared `mastra_ai_spans` type → 23505.
+
+**Storage must tolerate concurrent writers — this is architectural, not a preference.** The HTTP server and the LiveKit voice worker are separate processes, and the worker's job runners are separate processes again; all of them write spans (one per call, plus children per turn for STT/TTS/VAD/LLM-TTFT). A single-writer store cannot serve that. DuckDB was tried here and broke it concretely: the worker's supervised subprocesses failed with `Cannot open file "mastra.duckdb": ... already open in ... (PID N)` and the runner then timed out, so the worker registered but could not answer calls. Do not give `observability` (or any domain) its own single-writer store.
 
 ---
 
@@ -149,7 +147,7 @@ The `MastraEditor` instance gives non-developers a way to iterate on agent promp
 - **Never read `process.env` directly** — use `env` from `src/lib/env.ts`
 - **Never construct an AI SDK client before `configureAIMock()`** — AIMock will be bypassed silently
 - **Never use lists or markdown in voice agent instructions** — they are spoken aloud and sound unnatural
-- **Never change the Dockerfile base to `node:22-alpine`** — DuckDB native binaries will SIGSEGV at runtime
+- **Never change the Dockerfile base to `node:22-alpine`** — `onnxruntime-node` (fastembed embeddings, and LiveKit's Silero VAD + turn-detector) ships glibc-linked prebuilds with no musl build; `sharp` and the native tokenizers are the same. Stay on `node:22-slim`
 - **Never add a new env var without updating `.env.example`** — new devs won't know it exists
 - **Never skip the Zod schema for a new env var** — process will start with undefined values silently
 - **Never import from `src/mastra/` in `src/lib/`** — creates circular dependency risk

@@ -27,7 +27,6 @@
     "@livekit/agents-plugin-silero": "^1.5.2",
     "@mastra/auth": "^1.1.2",
     "@mastra/core": "^1.51.0",
-    "@mastra/duckdb": "^1.5.1",
     "@mastra/editor": "^0.13.7",
     "@mastra/evals": "^1.5.1",
     "@mastra/fastembed": "^1.2.0",

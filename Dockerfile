@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 # Use node:22-slim (Debian/glibc), NOT node:22-alpine (musl).
-# DuckDB native modules segfault on Alpine even with gcompat.
+# onnxruntime-node (fastembed embeddings + LiveKit's Silero VAD and turn-detector),
+# sharp, and the native tokenizers all ship glibc-linked prebuilds with no musl
+# build — they fail on Alpine even with gcompat.
 # This makes the image ~676MB instead of ~150MB. See README "Deployment Notes".
 # ─── Stage 1: build ───────────────────────────────────────────────
 FROM node:22-slim AS build
@@ -25,7 +27,7 @@ FROM node:22-slim AS runtime
 WORKDIR /app
 
 # tini — proper signal handling for SIGTERM
-# node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (e.g. DuckDB)
+# node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (onnxruntime, sharp)
 RUN apt-get update && apt-get install -y --no-install-recommends tini wget && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 1001 nodejs && \

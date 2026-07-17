@@ -235,12 +235,9 @@ The `docker-compose.yml` already includes the `host.docker.internal` override fo
 
 ### Docker image size
 
-The production image is ~676MB because:
+The production image is ~676MB because `node:22-slim` (Debian, glibc) is required — `node:22-alpine` (musl) breaks the native modules. `onnxruntime-node` (fastembed embeddings, plus LiveKit's Silero VAD and turn-detector), `sharp`, and the native tokenizers all ship glibc-linked prebuilds with no musl build.
 
-- `node:22-slim` (Debian, glibc) is required — `node:22-alpine` (musl) causes DuckDB to SIGSEGV
-- DuckDB is used by `@mastra/observability` for trace storage
-
-If you need a smaller image, swap `DuckDBStore` for `LibSQLStore` in `src/mastra/index.ts`. Trade-off: slower trace queries in Studio under load.
+Alpine is not a shortcut here: the ONNX models the voice worker needs are the reason the image is big, and they are the same reason musl is off the table.
 
 ## Common Gotchas
 
@@ -248,7 +245,7 @@ If you need a smaller image, swap `DuckDBStore` for `LibSQLStore` in `src/mastra
 |---|---|---|
 | `Invalid environment variables` on boot | Missing or malformed `.env` | Check each var listed in the error against `.env.example` |
 | `ECONNREFUSED 127.0.0.1:54322` | Local Supabase not running | `npx supabase start` |
-| Docker container crashes (SIGSEGV) | DuckDB requires glibc | Use `node:22-slim`, not `node:22-alpine` |
+| Docker container crashes (SIGSEGV) | Native modules (onnxruntime, sharp) need glibc | Use `node:22-slim`, not `node:22-alpine` |
 | `ECONNREFUSED` inside Docker | `127.0.0.1` in DB URL | Already handled in `docker-compose.yml` via `host.docker.internal` |
 | Agent not listed in Studio | Not registered in `mastra.agents` | Add to `src/mastra/index.ts` |
 | PostHog telemetry noise | Mastra runtime phones home on startup | Set `MASTRA_TELEMETRY_DISABLED=1` in `.env` |
