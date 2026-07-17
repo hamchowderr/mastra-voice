@@ -53,5 +53,20 @@ export default createLiveKitWorker({
 // Only run the CLI when this file is the process entry, not when the LiveKit
 // runtime imports it to read the default export above.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runLiveKitWorker({ entry: import.meta.url, agentName: 'mastra-voice' });
+  runLiveKitWorker({
+    entry: import.meta.url,
+    agentName: 'mastra-voice',
+    serverOptions: {
+      // LiveKit runs each job in a supervised subprocess that re-imports this
+      // file — and therefore the whole Mastra instance: fastembed/onnx (~2GB
+      // resident), pg, mcp, editor, evals, all transpiled through tsx. That
+      // does not finish inside the 10s default, so every runner died with
+      // "runner initialization timed out" and the worker registered but could
+      // never answer a call. Raised, not worked around: this is the knob for
+      // exactly this case. Measured cold on Windows; trim it only against a
+      // real cold start, since a runner that dies here is invisible until a
+      // call arrives.
+      initializeProcessTimeout: 60_000,
+    },
+  });
 }
