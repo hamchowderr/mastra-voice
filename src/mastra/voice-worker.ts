@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createLiveKitWorker, runLiveKitWorker } from '@mastra/livekit/worker';
 
 import { mastra } from './index';
-import { VOICE_AGENT_NAME } from './lib/voice';
+import { VOICE_AGENT_ID, VOICE_AGENT_NAME } from './lib/voice';
 
 /**
  * LiveKit voice worker — the realtime audio loop.
@@ -29,7 +29,8 @@ import { VOICE_AGENT_NAME } from './lib/voice';
  */
 export default createLiveKitWorker({
   mastra,
-  agent: 'voiceAssistant',
+  // Same key the connection route names in its dispatch metadata.
+  agent: VOICE_AGENT_ID,
 
   // Routed through LiveKit Cloud inference — no separate Deepgram/Cartesia
   // accounts, just the LIVEKIT_* credentials. Pass plugin instances instead of

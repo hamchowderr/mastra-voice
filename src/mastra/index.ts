@@ -16,7 +16,7 @@ import { MCPServer } from '@mastra/mcp';
 import { MastraJwtAuth } from '@mastra/auth';
 import { liveKitConnectionRoute } from '@mastra/livekit';
 import { voiceAssistantAgent } from './agents/_example';
-import { VOICE_AGENT_NAME } from './lib/voice';
+import { VOICE_AGENT_NAME, resolveVoiceResourceId, resolveVoiceSessionMetadata } from './lib/voice';
 import { answerRelevancyScorer } from './scorers/_example.scorers';
 import { doltTools } from './tools/dolt';
 import { ensureDatabase, doltConfigured } from './lib/dolt';
@@ -62,12 +62,19 @@ const server = {
   // posture instead. An unauthenticated route here mints LiveKit tokens for
   // anyone, letting strangers join rooms and burn your LiveKit minutes.
   //
-  // SECURITY, NOT YET DONE (voice-9jm.15): the default `metadata` passes
-  // agentId/threadId/resourceId straight through from the POST body, so an
-  // authenticated caller can still name someone else's resourceId and read their
-  // memory — an IDOR on the memory store. Derive resourceId from the verified JWT
-  // subject and mint threadId server-side before this is exposed to real users.
-  apiRoutes: [liveKitConnectionRoute({ agentName: VOICE_AGENT_NAME })],
+  // MEMORY SCOPE — never from the request body. The route's default reads
+  // agentId/threadId/resourceId out of the POST body, which lets any caller name
+  // someone else's resourceId and read their memory. Both resolvers derive the
+  // scope from the verified JWT subject and mint the thread server-side (see
+  // lib/voice.ts). participantIdentity is overridden for the same reason: its
+  // default falls back to the body-supplied resourceId.
+  apiRoutes: [
+    liveKitConnectionRoute({
+      agentName: VOICE_AGENT_NAME,
+      metadata: resolveVoiceSessionMetadata,
+      participantIdentity: resolveVoiceResourceId,
+    }),
+  ],
   ...(env.MASTRA_JWT_SECRET
     ? { auth: new MastraJwtAuth({ secret: env.MASTRA_JWT_SECRET }) }
     : {}),
