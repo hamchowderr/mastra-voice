@@ -12,16 +12,24 @@
  *     outputProcessors: defaultOutputProcessors,
  *   });
  *
- * ## What's ACTIVE by default (and why only these two)
+ * ## What's ACTIVE by default (and why only this one)
  *
  *   - UnicodeNormalizer (input)  — pure string op, no LLM. Strips homoglyph /
  *                                  invisible-char tricks and normalizes whitespace
  *                                  before any other check runs. Zero cost, zero downside.
- *   - TokenLimiter (output)      — deterministic tiktoken count, no LLM. Bounds runaway
- *                                  / costly responses. Generous cap so it never truncates
- *                                  legitimate output — tune per template.
  *
- * Both are deterministic and behavior-neutral: safe to apply to EVERY agent.
+ * It is deterministic and behavior-neutral: safe to apply to EVERY agent. Nothing
+ * else clears that bar, so nothing else is on by default.
+ *
+ * ## Why there is no default output processor
+ *
+ * There is no output-side token/cost cap available: `TokenLimiter` and `CostGuard`
+ * both implement ONLY `processInputStep` — they bound what is sent TO the model,
+ * not what comes back. `TokenLimiter` used to sit in `outputProcessors` here, where
+ * it had no valid hook. @mastra/core <=1.36 ignored it silently; >=1.47 does not —
+ * it wiped `result.text` and `result.steps` on every non-streaming `generate()`,
+ * so the REST /generate path returned empty responses and the eval gate saw no
+ * tool calls. Do not put an input-phase processor in `outputProcessors`.
  *
  * ## What's OPT-IN (commented below) — and why it is NOT on by default
  *
@@ -40,7 +48,7 @@
  */
 
 import type { InputProcessorOrWorkflow, OutputProcessorOrWorkflow } from '@mastra/core/processors';
-import { UnicodeNormalizer, TokenLimiter } from '@mastra/core/processors';
+import { UnicodeNormalizer } from '@mastra/core/processors';
 
 // import {
 //   ModerationProcessor,
@@ -51,19 +59,22 @@ import { UnicodeNormalizer, TokenLimiter } from '@mastra/core/processors';
 //   ToolCallFilter,
 //   StructuredOutputProcessor,
 //   BatchPartsProcessor,
+//   TokenLimiter,
+//   CostGuardProcessor,
 // } from '@mastra/core/processors';
-
-/**
- * Lower cap than the base template: voice/realtime responses are spoken, so they
- * should stay short. Raise it if this agent also serves long text responses.
- * NOTE: keep BatchPartsProcessor OFF for voice — it buffers chunks and adds
- * time-to-first-token, which hurts realtime latency.
- */
-export const DEFAULT_OUTPUT_TOKEN_LIMIT = 2000;
 
 export const defaultInputProcessors: InputProcessorOrWorkflow[] = [
   // Deterministic, no LLM — always safe.
   new UnicodeNormalizer({ stripControlChars: true, collapseWhitespace: true }),
+
+  // --- OPT-IN: deterministic input-budget guards (no LLM) ---
+  // Both bound the INPUT (system prompt + history) sent to the model, not the
+  // response. Neither is behavior-neutral: TokenLimiter drops older messages to
+  // fit, and throws a TripWire if the system prompt alone exceeds the limit —
+  // which working memory can grow into. Set the limit against this agent's real
+  // system prompt before enabling.
+  // new TokenLimiter({ limit: 2000, strategy: 'truncate' }),
+  // new CostGuardProcessor({ ... }),
 
   // --- OPT-IN: model-backed input guardrails (each = one extra LLM call) ---
   // Block jailbreak / prompt-injection before the agent acts:
@@ -77,8 +88,9 @@ export const defaultInputProcessors: InputProcessorOrWorkflow[] = [
 ];
 
 export const defaultOutputProcessors: OutputProcessorOrWorkflow[] = [
-  // Deterministic, no LLM — always safe.
-  new TokenLimiter({ limit: DEFAULT_OUTPUT_TOKEN_LIMIT, strategy: 'truncate' }),
+  // Empty by design — see "Why there is no default output processor" above.
+  // Only put processors here that implement an OUTPUT phase hook
+  // (processOutputResult / processOutputStream / processOutputStep).
 
   // --- OPT-IN: model-backed / behavior-changing output processors ---
   // Stop system-prompt / instruction leakage in responses (one extra LLM call):
