@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createLiveKitWorker, runLiveKitWorker } from '@mastra/livekit/worker';
 
 import { mastra } from './index';
+import { VOICE_AGENT_NAME } from './lib/voice';
 
 /**
  * LiveKit voice worker — the realtime audio loop.
@@ -55,7 +56,9 @@ export default createLiveKitWorker({
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   runLiveKitWorker({
     entry: import.meta.url,
-    agentName: 'mastra-voice',
+    // Same constant the connection route dispatches to — a mismatch here means
+    // calls connect and then sit in silence, with no error anywhere.
+    agentName: VOICE_AGENT_NAME,
     serverOptions: {
       // LiveKit runs each job in a supervised subprocess that re-imports this
       // file — and therefore the whole Mastra instance: fastembed/onnx (~2GB
