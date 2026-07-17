@@ -47,6 +47,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: stub
           SUPABASE_DB_URL: postgres://stub:stub@localhost:5432/stub
           ANTHROPIC_API_KEY: stub
+          LIVEKIT_URL: wss://stub.livekit.cloud
+          LIVEKIT_API_KEY: stub
+          LIVEKIT_API_SECRET: stub
 
   eval:
     runs-on: ubuntu-latest
@@ -104,6 +107,9 @@ jobs:
           ANTHROPIC_API_KEY: stub
           OPENAI_API_KEY: stub
           GOOGLE_GENERATIVE_AI_API_KEY: stub
+          LIVEKIT_URL: wss://stub.livekit.cloud
+          LIVEKIT_API_KEY: stub
+          LIVEKIT_API_SECRET: stub
           NODE_ENV: test
           LOG_LEVEL: warn
 

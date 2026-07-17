@@ -20,12 +20,16 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.58",
+    "@livekit/agents": "^1.5.2",
+    "@livekit/agents-plugin-livekit": "^1.5.2",
+    "@livekit/agents-plugin-silero": "^1.5.2",
     "@mastra/auth": "^1.1.1",
     "@mastra/core": "^1.47.0",
     "@mastra/duckdb": "^1.5.0",
     "@mastra/editor": "^0.13.2",
     "@mastra/evals": "^1.5.0",
     "@mastra/fastembed": "^1.2.0",
+    "@mastra/livekit": "^0.3.0",
     "@mastra/loggers": "^1.2.0",
     "@mastra/mcp": "^1.12.0",
     "@mastra/memory": "^1.21.2",
@@ -33,13 +37,13 @@
     "@mastra/pg": "^1.14.2",
     "@supabase/supabase-js": "^2.105.1",
     "mysql2": "^3.22.3",
+    "tsx": "^4.21.0",
     "zod": "^4.4.2"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "mastra": "^1.16.0",
     "supabase": "^2.98.0",
-    "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
 }

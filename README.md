@@ -8,7 +8,7 @@ A production-ready Mastra voice agent starter. Real-time speech-to-speech via Li
 
 ## Quickstart (5 minutes)
 
-**Prerequisites**: Node 22+, Docker Desktop, a Supabase project, an Anthropic API key.
+**Prerequisites**: Node 22.13+, Docker Desktop, a Supabase project, an Anthropic API key, and LiveKit credentials ([LiveKit Cloud](https://cloud.livekit.io) or self-hosted).
 
 ```bash
 # 1. Clone and install
@@ -262,6 +262,7 @@ See `.env.example` for the full list with comments. Minimum required:
 - `APP_SECRET` — min 32 chars, generate with `openssl rand -hex 32`
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
 - At least one of: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` — the realtime voice transport; all three required
 
 ---
 

@@ -30,6 +30,15 @@ const envSchema = z
     OPENAI_API_KEY: z.string().optional(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
 
+    // LiveKit — the realtime voice transport. Required: the worker cannot
+    // connect without all three, so fail at boot rather than at call time.
+    LIVEKIT_URL: z
+      .string()
+      .url()
+      .refine((v) => v.startsWith('ws://') || v.startsWith('wss://'), 'Must be a ws:// or wss:// URL'),
+    LIVEKIT_API_KEY: z.string().min(1, 'LIVEKIT_API_KEY required for voice'),
+    LIVEKIT_API_SECRET: z.string().min(1, 'LIVEKIT_API_SECRET required for voice'),
+
     USE_AIMOCK: boolish.default(false),
     AIMOCK_URL: z.string().url().default('http://localhost:4010'),
 
