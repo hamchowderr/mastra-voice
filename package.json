@@ -8,6 +8,9 @@
     "build": "mastra build",
     "start": "mastra start",
     "typecheck": "tsc --noEmit",
+    "worker:dev": "node --env-file=.env --import tsx src/mastra/voice-worker.ts dev",
+    "worker:start": "node --env-file=.env --import tsx src/mastra/voice-worker.ts start",
+    "worker:download-files": "livekit-agents download-files",
     "eval": "node --env-file=.env --import tsx/esm scripts/eval.ts",
     "score:list": "mastra scorers list"
   },
