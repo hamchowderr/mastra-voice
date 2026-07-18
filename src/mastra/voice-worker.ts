@@ -81,6 +81,51 @@ export default createLiveKitWorker({
     },
   },
 
+  // ── Lifecycle hooks (voice-9jm.9): keep slow work off the caller's clock ──
+  //
+  // The LiveKit voice workshop's latency rule is the contract here: "manage as
+  // much of the expensive work after the call has been over instead of having
+  // tool calls that run during the experience... people will be impatient." So
+  // the worker gives you three hooks on the latency-correct paths — two per turn
+  // (toolFeedback DURING a tool, onTurnComplete AFTER the reply), and onCallEnd
+  // once at the end (below). Nothing here may sit on the audio path.
+
+  // Spoken WHILE a Mastra tool call runs, so a slow tool doesn't leave the caller
+  // in silence. Return a short phrase to speak it (it also lands in the
+  // transcript); return nothing to stay silent. Keep it to a few words — it's
+  // filler, not the answer. Stays silent for instant / awkward-to-narrate tools
+  // (consent capture, hang-up): narrating "let me record that" over a yes/no is
+  // worse than saying nothing.
+  toolFeedback: ({ toolName }) => {
+    switch (toolName) {
+      case 'getCurrentTime':
+        return 'Let me check the time.';
+      case 'evaluateMath':
+        return 'Let me work that out.';
+      default:
+        // recordConsent / endCall and anything else: no filler.
+        return undefined;
+    }
+  },
+
+  // Fired once per turn AFTER the reply has streamed to TTS — FIRE-AND-FORGET.
+  // The worker never awaits it, so anything here (CRM writes, analytics, logging)
+  // can't delay the caller or the next turn. This is the seam for per-turn side
+  // effects; the durable, attributable compliance write belongs at end-of-call /
+  // the Dolt ledger (voice-9jm.22), not on every turn. `memory` is `false` when
+  // memory is disabled — guard it before reading thread/resource.
+  onTurnComplete: ({ result, memory }) => {
+    const resource = memory ? memory.resource : undefined;
+    // Template seam: swap this log for your CRM/analytics write. It runs off the
+    // audio path, so a slow sink here never reaches the caller.
+    console.info('[turn]', {
+      resource,
+      chars: result.text.length,
+      tools: result.toolCalls.map((t) => t.toolName),
+      interrupted: result.interrupted,
+    });
+  },
+
   // ENFORCE the consent policy at end-of-call. Runs off the audio path, awaited inside
   // LiveKit's shutdown window. Deny-by-default: only store the end-of-call summary when
   // summaryStorage isn't required, or the caller actually granted it.
