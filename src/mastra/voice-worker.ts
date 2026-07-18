@@ -5,6 +5,7 @@ import { createLiveKitWorker, runLiveKitWorker } from '@mastra/livekit/worker';
 import { mastra } from './index';
 import { VOICE_AGENT_ID, VOICE_AGENT_NAME } from './lib/voice';
 import { hasConsent } from './lib/consent-ledger';
+import { noteComplianceEvent, flushComplianceLedger } from './lib/compliance-ledger';
 import type { Memory } from '@mastra/memory';
 
 /**
@@ -176,15 +177,41 @@ export default createLiveKitWorker({
     });
   },
 
-  // ENFORCE the consent policy at end-of-call. Runs off the audio path, awaited inside
-  // LiveKit's shutdown window. Deny-by-default: only store the end-of-call summary when
-  // summaryStorage isn't required, or the caller actually granted it.
-  onCallEnd: async ({ memory, memoryInstance, configuration }) => {
-    const req = configuration?.consentPolicy?.summaryStorage;
-    const required = req === true || (typeof req === 'object' && req?.required !== false);
+  // End-of-call close-out. Runs off the audio path, awaited inside LiveKit's shutdown
+  // window. Two independent jobs: (A) commit the compliance audit trail to Dolt, and
+  // (B) store the consent-gated call summary.
+  onCallEnd: async ({ memory, memoryInstance, configuration, roomName }) => {
     const resourceId = memory ? memory.resource : undefined;
     const threadId = memory ? memory.thread : undefined;
 
+    // (A) COMPLIANCE LEDGER (voice-9jm.22) — record + flush the call's audit trail
+    // FIRST, independent of the summary decision below: the ledger must capture what
+    // happened even when consent was denied. The disclosure was given (the greeting
+    // is configured and played non-interruptibly); consent grants and any agent
+    // hang-up were buffered during the call. Flush them as ONE attributed Dolt
+    // commit. No-ops when Dolt is unconfigured (the default template).
+    if (threadId) {
+      const greeting = configuration?.greeting?.text;
+      noteComplianceEvent(threadId, {
+        event: 'disclosure',
+        detail: typeof greeting === 'string' ? greeting : 'AI-disclosure greeting given',
+        at: new Date(),
+      });
+      try {
+        const res = await flushComplianceLedger({ threadId, resourceId, roomName });
+        if (res.committed) {
+          console.info(`[compliance] committed ${res.count} event(s) to Dolt (${res.commit}).`);
+        }
+      } catch (err) {
+        // A compliance-store hiccup must not crash teardown — log and continue.
+        console.error('[compliance] failed to flush the Dolt ledger:', err);
+      }
+    }
+
+    // (B) CONSENT-GATED SUMMARY — deny-by-default: only store the end-of-call summary
+    // when summaryStorage isn't required, or the caller actually granted it.
+    const req = configuration?.consentPolicy?.summaryStorage;
+    const required = req === true || (typeof req === 'object' && req?.required !== false);
     if (required && !hasConsent(resourceId, 'summaryStorage')) {
       console.info('[consent] summaryStorage not granted — skipping the end-of-call summary.');
       return;

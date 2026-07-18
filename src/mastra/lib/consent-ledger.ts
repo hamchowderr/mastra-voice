@@ -1,5 +1,7 @@
 import type { ConsentGrant } from '@mastra/livekit';
 
+import { noteComplianceEvent } from './compliance-ledger';
+
 /**
  * # Consent ledger — the "capture → enforce" store for runtime consent
  *
@@ -42,7 +44,15 @@ export async function recordConsentGrant(grant: ConsentGrant): Promise<void> {
     return;
   }
   grants.set(key(grant.resourceId, grant.item), grant.granted);
-  // Durable audit sink goes here → route to the Dolt compliance ledger (voice-9jm.22).
+  // Durable audit sink: buffer the decision for this call's single Dolt compliance
+  // commit at onCallEnd (voice-9jm.22). Synchronous + cheap; no-ops when Dolt is
+  // unconfigured, so this stays off the caller's clock and safe in the default template.
+  noteComplianceEvent(grant.threadId, {
+    event: 'consent',
+    item: grant.item,
+    granted: grant.granted,
+    at: new Date(),
+  });
 }
 
 /**

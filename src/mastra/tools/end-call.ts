@@ -1,5 +1,7 @@
 import { createEndCallTool } from '@mastra/livekit';
 
+import { noteComplianceEvent } from '../lib/compliance-ledger';
+
 /**
  * Agent-initiated hang-up — the agent-visible half. Attach this tool to the agent
  * that answers the call and set `configuration.endCall` on the worker (see
@@ -22,9 +24,15 @@ import { createEndCallTool } from '@mastra/livekit';
 export const endCallTool = createEndCallTool({
   onEndCall: ({ reason, resourceId, threadId }) => {
     // Bookkeeping only — this does NOT hang up (the worker does, once the closing
-    // words finish). Runs inside the turn, so keep it quick. Template seam: mark the
-    // call resolved in your CRM here, and route the compliance sign-off to the Dolt
-    // ledger (voice-9jm.22) alongside the disclosure ack and consent decision.
+    // words finish). Runs inside the turn, so keep it quick.
     console.info('[endCall] agent ended call', { reason, resourceId, threadId });
+    // Buffer the agent-initiated hang-up as the call's outcome, for this call's
+    // single Dolt compliance commit at onCallEnd (voice-9jm.22). No-ops when Dolt
+    // is unconfigured. (A caller-initiated hang-up simply leaves no 'hangup' row.)
+    noteComplianceEvent(threadId, {
+      event: 'hangup',
+      detail: reason ?? 'agent ended call',
+      at: new Date(),
+    });
   },
 });
