@@ -69,9 +69,11 @@ Tools used only by one agent live inline in that agent's file. Shared tools go i
 
 ## Voice Conventions
 
-**The realtime voice transport is being migrated to LiveKit.** The Gemini Live STS
-stack has been removed and the LiveKit worker is not wired up yet, so the agent is
-text-mode only in the interim. Realtime conventions land with the worker.
+**Realtime voice runs on LiveKit (`@mastra/livekit`), in a SEPARATE worker process.** The Gemini Live STS stack is gone. The worker (`src/mastra/voice-worker.ts`, run via `npm run worker:*`) owns the audio loop; the HTTP server owns the text path. The worker is NOT bundled by `mastra build` — it runs from source via `tsx`. Only one worker flavor runs at a time (same `agentName`).
+
+**Compliance controls live on the worker** (`configuration` + lifecycle hooks): AI-disclosure greeting (non-interruptible, periodic re-disclosure), consent declare→capture→enforce (deny-by-default at `onCallEnd`), agent-initiated hang-up (`endCall` + a `stopWhen` guard), and a per-call Dolt audit ledger (`lib/compliance-ledger.ts`, dormant until `DOLT_*` set). Keep the consent policy keys in sync across `configuration.consentPolicy`, the `recordConsent` tool's `items`, and the agent instructions — nothing enforces that they agree.
+
+**Keep slow work off the caller's clock.** Tool filler (`toolFeedback`) speaks during slow tools; per-turn side effects go in fire-and-forget `onTurnComplete`; expensive close-out (summaries, ledger flush) goes in awaited `onCallEnd`. Memory writes are off-loop by design (`agentManaged: false`).
 
 **Tools auto-flow to voice.** Any tool registered on the agent is automatically available to the voice session. No separate voice tool registration is needed.
 
