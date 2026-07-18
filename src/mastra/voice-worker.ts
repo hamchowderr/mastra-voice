@@ -79,6 +79,27 @@ export default createLiveKitWorker({
     consentPolicy: {
       summaryStorage: { required: true, purpose: 'storing a summary of this call' },
     },
+
+    // Agent-initiated hang-up (voice-9jm.8). The agent ends the call itself by
+    // calling the `endCall` tool (see tools/end-call.ts) as its final action; the
+    // worker owns the actual hang-up. Enabling it here + matching the tool name is
+    // all it takes — the worker watches each turn for the tool, waits for the
+    // agent's closing words to finish playing, then disconnects (running onCallEnd
+    // on the way out, exactly as a caller hang-up does). The tool name must match
+    // createEndCallTool's id (both default to 'endCall').
+    endCall: {
+      // A guaranteed, NON-interruptible sign-off spoken after the agent's own
+      // goodbye, right before hang-up — the caller can't talk over it. This is the
+      // compliance-closing seam (e.g. a required recording/retention notice); kept
+      // to a plain goodbye here since the AI disclosure already played at greeting.
+      message: 'Thank you for calling. Goodbye.',
+      // Recorded on the shutdown, visible in LiveKit logs.
+      reason: 'assistant wrapped up the call',
+      // drainMs defaults to 800ms (holds buffered audio at the caller so the tail of
+      // the goodbye isn't clipped); maxWaitMs defaults to 30s (safety cap on waiting
+      // for the closing words to finish). Defaults are right for a phone call —
+      // named here only as the knobs to reach for.
+    },
   },
 
   // ── Lifecycle hooks (voice-9jm.9): keep slow work off the caller's clock ──
