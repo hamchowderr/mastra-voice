@@ -46,8 +46,27 @@ export default createLiveKitWorker({
   vad: 'silero',
 
   configuration: {
+    // AI-disclosure greeting — lawful by default. EU AI Act Art. 50 requires
+    // telling a person they're interacting with an AI at the first interaction;
+    // California SB 243 (and similar) require periodic re-disclosure on long
+    // calls. The greeting is spoken via TTS with NO model round-trip, so this
+    // costs zero LLM latency. For a per-tenant disclosure, pass a resolver as
+    // `text` instead of a string — the flags below still apply to what it returns.
     greeting: {
-      text: "Hi, you're through to the voice assistant. How can I help?",
+      // Discloses up front that the caller is speaking with an AI.
+      text: "Hi, you're speaking with an AI voice assistant. How can I help you today?",
+      // The caller cannot barge over the disclosure — it must actually be heard.
+      allowInterruptions: false,
+      // Hold post-greeting work (persistence, onSessionStart) until it plays out,
+      // so the disclosure fully completes before anything else runs.
+      awaitPlayout: true,
+      // Persist the spoken disclosure to the memory thread as proof it was given
+      // (default true; explicit here — this is the compliance evidence trail).
+      persist: true,
+      // Re-disclose ~every 3 minutes on long calls, prefixed onto the next turn's
+      // reply at a turn boundary (never mid-sentence). Use ~45_000 for demos.
+      repeatEvery: 3 * 60_000,
+      repeatText: 'Quick reminder — you are speaking with an AI assistant.',
     },
   },
 });
