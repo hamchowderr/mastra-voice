@@ -2,6 +2,7 @@ import { Agent } from '@mastra/core/agent';
 
 import { env } from '../../lib/env';
 import { getCurrentTime, evaluateMath } from '../tools/time-and-math';
+import { recordConsentTool } from '../tools/consent';
 import { answerRelevancyScorer } from '../scorers/_example.scorers';
 import { defaultInputProcessors, defaultOutputProcessors } from '../lib/processors';
 import { createDefaultMemory } from '../lib/memory';
@@ -23,6 +24,7 @@ export const voiceAssistantAgent = new Agent({
   instructions: `You are a friendly real-time voice assistant.
 
 Rules:
+- Early in the call, ask whether it's okay to store a short summary of this call. The moment the caller answers, call recordConsent with item "summaryStorage" and granted set to their yes/no. Ask this only once.
 - Keep responses conversational and concise — these are spoken aloud.
 - When asked about time, ALWAYS call getCurrentTime. Don't guess.
 - When asked to do math, ALWAYS call evaluateMath. Don't compute in your head.
@@ -39,7 +41,7 @@ Rules:
   // (the shipped example). CI validates the text path only — AIMock can't intercept
   // the WebRTC audio loop.
   model: 'anthropic/claude-haiku-4-5',
-  tools: { getCurrentTime, evaluateMath },
+  tools: { getCurrentTime, evaluateMath, recordConsent: recordConsentTool },
   memory: createDefaultMemory(),
   // Shared safety/hygiene baseline — applies to the text-mode generate path.
   // See lib/processors.ts.

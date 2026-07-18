@@ -4,6 +4,8 @@ import { createLiveKitWorker, runLiveKitWorker } from '@mastra/livekit/worker';
 
 import { mastra } from './index';
 import { VOICE_AGENT_ID, VOICE_AGENT_NAME } from './lib/voice';
+import { hasConsent } from './lib/consent-ledger';
+import type { Memory } from '@mastra/memory';
 
 /**
  * LiveKit voice worker — the realtime audio loop.
@@ -68,6 +70,41 @@ export default createLiveKitWorker({
       repeatEvery: 3 * 60_000,
       repeatText: 'Quick reminder — you are speaking with an AI assistant.',
     },
+
+    // Consent policy — DECLARE only; the worker enforces nothing on its own. Each item
+    // is independently required and independently granted (no global "consented" flag).
+    // Captured at runtime by the recordConsent tool on the agent (see tools/consent.ts),
+    // and enforced in onCallEnd below. Keep these keys in sync with that tool's `items`
+    // and the agent's instructions — there is no compile-time check that they agree.
+    consentPolicy: {
+      summaryStorage: { required: true, purpose: 'storing a summary of this call' },
+    },
+  },
+
+  // ENFORCE the consent policy at end-of-call. Runs off the audio path, awaited inside
+  // LiveKit's shutdown window. Deny-by-default: only store the end-of-call summary when
+  // summaryStorage isn't required, or the caller actually granted it.
+  onCallEnd: async ({ memory, memoryInstance, configuration }) => {
+    const req = configuration?.consentPolicy?.summaryStorage;
+    const required = req === true || (typeof req === 'object' && req?.required !== false);
+    const resourceId = memory ? memory.resource : undefined;
+    const threadId = memory ? memory.thread : undefined;
+
+    if (required && !hasConsent(resourceId, 'summaryStorage')) {
+      console.info('[consent] summaryStorage not granted — skipping the end-of-call summary.');
+      return;
+    }
+    if (!threadId || !memoryInstance) return;
+
+    // Consent-gated action: distill the finished call into a stored summary.
+    // memoryInstance is typed as the base MastraMemory; the concrete instance here is
+    // the @mastra/memory Memory (from createDefaultMemory), which adds summarizeThread.
+    await (memoryInstance as Memory).summarizeThread({
+      threadId,
+      resourceId,
+      model: 'anthropic/claude-haiku-4-5',
+      instructions: "Summarize this voice call: the caller's intent, what was done, and any follow-ups.",
+    });
   },
 });
 
