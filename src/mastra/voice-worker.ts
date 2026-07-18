@@ -42,10 +42,39 @@ export default createLiveKitWorker({
 
   // Semantic end-of-turn, run locally on CPU against the live transcript, so a
   // caller who pauses mid-thought isn't cut off. 'english' is the lighter model.
+  //
+  // NOTE (voice-l9r): @livekit/agents 1.5.x deprecates this text-based turn
+  // detector in favor of the audio EOT `TurnDetector` (@livekit/agents/inference).
+  // Migration is deferred, not overlooked: @mastra/livekit@0.3.0 still documents
+  // 'multilingual' as supported and only constructs a custom TurnDetector INSIDE
+  // the job context — a module-scope instance freezes its inference executor to
+  // `undefined`, degrading the local v1-mini fallback. Deprecated != broken, and
+  // the swap needs real-audio verification (voice-9jm.12). Revisit when
+  // @mastra/livekit ships native audio-EOT support.
   turnDetection: 'multilingual',
 
   // Silero VAD (the default) — stated explicitly because it's a knob worth knowing.
   vad: 'silero',
+
+  // Turn-taking tuning (voice-9jm.10). @mastra/livekit merges this over the
+  // AgentSession defaults, and — importantly — forces preemptiveGeneration OFF
+  // regardless of what's here: this template has memory, and a speculative turn
+  // that completes before LiveKit discards it persists a user message AND a
+  // never-spoken reply, duplicating thread history. So it's intentionally absent.
+  turnHandling: {
+    // Endpointing decides when the caller's turn is over. 'dynamic' adjusts the
+    // wait from the turn detector's end-of-utterance prediction rather than a
+    // fixed delay, so a caller who pauses mid-thought isn't cut off while a clean
+    // stop is still picked up quickly. minDelay/maxDelay left at LiveKit's
+    // defaults (500ms / 3000ms) — tune them against REAL audio in voice-9jm.12,
+    // not by guesswork here.
+    endpointing: { mode: 'dynamic' },
+    // Interruption (barge-in) is on by default. These are the knobs to reach for:
+    // minDuration ignores sub-500ms blips as interruptions; resumeFalseInterruption
+    // resumes the reply if the "interruption" turns out to be silence. Left at
+    // their defaults, named here as the tuning surface.
+    interruption: { minDuration: 500, resumeFalseInterruption: true },
+  },
 
   configuration: {
     // AI-disclosure greeting — lawful by default. EU AI Act Art. 50 requires
@@ -191,8 +220,25 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       // never answer a call. Raised, not worked around: this is the knob for
       // exactly this case. Measured cold on Windows; trim it only against a
       // real cold start, since a runner that dies here is invisible until a
-      // call arrives.
+      // call arrives. The real fix is a lighter subprocess import (does the
+      // worker need editor/evals/mcp?) — tracked for a future pass.
       initializeProcessTimeout: 60_000,
+
+      // Prewarm exactly ONE idle runner so the first call is answered warm
+      // instead of paying the ~2GB / 60s boot on the caller's clock. LiveKit's
+      // production default is min(cores, 4) idle runners — but each re-imports
+      // the full ~2GB Mastra instance, so the default would pin up to ~8GB
+      // resident before a single call. One hot runner is the right trade for
+      // this heavy-import template; raise it only on a box with the RAM to spare.
+      numIdleProcesses: 1,
+
+      // Each runner's baseline is ~2GB (fastembed/onnx), which trips LiveKit's
+      // 1000MB default job-memory advisory on EVERY run — burying any real
+      // memory-pressure signal in noise. Raise the warn line above the known
+      // baseline so a warning means genuine growth. jobMemoryLimitMB is left at
+      // 0 (no hard cap): a hard limit here would OOM-kill a legitimately ~2GB
+      // runner mid-call. Trim the import instead if memory actually matters.
+      jobMemoryWarnMB: 3072,
     },
   });
 }
