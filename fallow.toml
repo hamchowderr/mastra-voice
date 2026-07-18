@@ -1,0 +1,14 @@
+# Fallow config — dead-code / dependency analysis.
+#
+# These two packages are loaded at RUNTIME BY NAME by @mastra/livekit, not via a
+# static `import`, so fallow's import graph can't see them and reports them as
+# unused. They are required by the voice worker:
+#   @livekit/agents-plugin-livekit  -> LiveKit-inference STT (deepgram/nova-3),
+#                                       TTS (cartesia/sonic-3), multilingual EOT
+#   @livekit/agents-plugin-silero   -> Silero VAD + turn detector ONNX models
+# Removing either breaks the worker (see src/mastra/voice-worker.ts). Do not
+# delete them; they are intentional runtime deps, not dead weight.
+ignoreDependencies = [
+  "@livekit/agents-plugin-livekit",
+  "@livekit/agents-plugin-silero",
+]

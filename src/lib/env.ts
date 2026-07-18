@@ -75,4 +75,5 @@ if (!parsed.success) {
 }
 
 export const env = Object.freeze(parsed.data);
+/** @public */
 export type Env = typeof env;

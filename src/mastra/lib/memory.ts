@@ -53,6 +53,8 @@ import { env } from '../../lib/env';
 /**
  * Leaner scratchpad for voice: spoken interactions should track only a few
  * high-value facts so the agent stays fast and conversational.
+ *
+ * @public — exported for template users to reference or override the default.
  */
 export const DEFAULT_WORKING_MEMORY_TEMPLATE = `# Caller
 - Name:

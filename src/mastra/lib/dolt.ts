@@ -22,6 +22,7 @@ const config = {
 export const doltConfigured = Boolean(process.env.DOLT_HOST || process.env.DOLT_PORT);
 
 let _pool: mysql.Pool | null = null;
+/** @public — lazy singleton pool; used internally by query()/select(), exposed for advanced direct use. */
 export function pool(): mysql.Pool {
   if (!_pool) _pool = mysql.createPool({ ...config, connectionLimit: 4 });
   return _pool;
