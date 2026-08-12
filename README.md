@@ -277,6 +277,15 @@ The image is large — `node:22-slim` (Debian, glibc) is required because `node:
 
 It also carries the **worker runtime** (production `node_modules` + `src` + `tsx`), because the worker runs from source — bundling it would drag in LiveKit's native deps. The server bundle alone is ~676MB; the shared two-service image is larger. Alpine is not a shortcut: the ONNX models the worker needs are the reason the image is big, and the same reason musl is off the table.
 
+### Hardware & scaling
+
+The worker needs **no GPU**. STT (`deepgram/nova-3`), TTS (`cartesia/sonic-3`), and the LLM all run remotely (LiveKit Cloud inference + your model provider). On-box it runs only small ONNX models — Silero VAD, turn detection, and the 384-dim embeddings for semantic recall — plus the JS agent loop and Postgres I/O.
+
+Its cost is **RAM-dominated**: each concurrent call spins a job runner that re-imports the full Mastra app (~2GB), the base worker is ~1GB, and each prewarmed idle runner (`numIdleProcesses`) holds ~2GB.
+
+- **Local dev:** 32GB is comfortable; 16GB is the practical floor, and only if little else runs — one call is ~5GB (base + prewarm + active runner) on top of Docker, a browser, and your editor. Set `numIdleProcesses: 0` to drop the idle spare, and run the call client on a second device (phone or laptop) so the browser's WebRTC encoding doesn't compete with the worker for CPU. An NVMe SSD helps model load.
+- **Production:** budget ~1.5–2GB RAM and ~1–2 vCPU per concurrent call — a 4 vCPU / 8–16GB instance handles several. Scale **horizontally**: LiveKit dispatches across every registered worker, so add worker replicas for volume rather than enlarging one box, and keep the worker region-close to your LiveKit project to minimize round-trip to the cloud STT/TTS. The compose `worker` service reserves 2GB / limits 4GB.
+
 ## Common Gotchas
 
 | Symptom | Cause | Fix |
@@ -286,7 +295,8 @@ It also carries the **worker runtime** (production `node_modules` + `src` + `tsx
 | Docker container crashes (SIGSEGV) | Native modules (onnxruntime, sharp) need glibc | Use `node:22-slim`, not `node:22-alpine` |
 | `ECONNREFUSED` inside Docker | `127.0.0.1`/`localhost` in a DB URL | In compose, use the service names (`postgres`, `dolt`) — already wired in `docker-compose.yml` |
 | Call connects to silence | No worker running (or scaled to zero) | Keep ≥1 `worker` service up; check it registered under the right `agentName` |
-| `runner initialization timed out` | Worker subprocess re-imports ~2GB (fastembed/onnx) | Already raised via `initializeProcessTimeout` in `voice-worker.ts` |
+| `runner initialization timed out` | Worker subprocess re-imports ~2GB (fastembed/onnx) | Already raised via `initializeProcessTimeout` in `voice-worker.ts`; if it persists, the host is RAM-starved (see below) |
+| Responses lag; log shows `inference is slower than realtime` (delay climbing) | Host RAM/CPU starved — unrelated Docker stacks running, or the call's browser sharing the box | Free RAM (`docker ps`, then `supabase stop --project-id <id>` on strays), set `numIdleProcesses: 0`, run the call client off-box |
 | Agent not listed in Studio | Not registered in `mastra.agents` | Add to `src/mastra/index.ts` |
 | PostHog telemetry noise | Mastra runtime phones home on startup | Set `MASTRA_TELEMETRY_DISABLED=1` in `.env` |
 
