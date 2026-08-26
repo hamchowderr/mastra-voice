@@ -129,6 +129,77 @@ jobs:
         with:
           context: .
           push: false
+          # load into the local daemon so the smoke test below can actually run it
+          load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: mastra:ci-${{ github.sha }}
+
+      # voice-9jm.26 — building the image only proves it COMPILES. A broken CMD,
+      # a missing runtime dep, or a bad tsx/loader path passes the build and then
+      # fails on a consumer's VPS. Both processes get started here for real.
+      #
+      # Stub creds throughout: neither container should need to reach a real
+      # service to get far enough to prove its entrypoint resolves.
+      - name: Smoke test — server entrypoint answers /health
+        run: |
+          docker run -d --name smoke-server             -p 4111:4111             -e MASTRA_TELEMETRY_DISABLED=1             -e APP_SECRET=smoke_test_stub_smoke_test_stub_32             -e SUPABASE_URL=https://stub.supabase.co             -e SUPABASE_ANON_KEY=stub             -e SUPABASE_SERVICE_ROLE_KEY=stub             -e SUPABASE_DB_URL=postgres://stub:stub@127.0.0.1:5432/stub             -e ANTHROPIC_API_KEY=stub             -e LIVEKIT_URL=wss://stub.livekit.cloud             -e LIVEKIT_API_KEY=stub             -e LIVEKIT_API_SECRET=stub             mastra:ci-${{ github.sha }}
+
+          echo "Waiting for /health on 4111..."
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:4111/health > /dev/null 2>&1; then
+              echo "server answered /health after ${i}s"
+              exit 0
+            fi
+            # fail fast if the container died rather than burning the full timeout
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke-server 2>/dev/null)" != "true" ]; then
+              echo "=== server container exited early ==="
+              docker logs smoke-server
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "=== server never answered /health ==="
+          docker logs smoke-server
+          exit 1
+
+      # The worker has no HTTP port, so there is nothing to poll. Stub LiveKit
+      # creds mean it CANNOT authenticate — that is expected and is not what is
+      # being tested. What is tested: the entrypoint resolves, tsx loads the
+      # TypeScript source, and the process reaches LiveKit connection logic
+      # instead of dying on a missing module or a bad path.
+      - name: Smoke test — worker entrypoint boots
+        run: |
+          docker run -d --name smoke-worker             -e MASTRA_TELEMETRY_DISABLED=1             -e APP_SECRET=smoke_test_stub_smoke_test_stub_32             -e SUPABASE_URL=https://stub.supabase.co             -e SUPABASE_ANON_KEY=stub             -e SUPABASE_SERVICE_ROLE_KEY=stub             -e SUPABASE_DB_URL=postgres://stub:stub@127.0.0.1:5432/stub             -e ANTHROPIC_API_KEY=stub             -e LIVEKIT_URL=wss://stub.livekit.cloud             -e LIVEKIT_API_KEY=stub             -e LIVEKIT_API_SECRET=stub             mastra:ci-${{ github.sha }}             node --import tsx src/mastra/voice-worker.ts start
+
+          sleep 25
+          docker logs smoke-worker > worker.log 2>&1
+          echo "=== worker log ==="
+          cat worker.log
+
+          # A module-resolution or entrypoint failure looks completely different
+          # from an auth failure. Catch the former explicitly.
+          if grep -qiE "Cannot find module|ERR_MODULE_NOT_FOUND|ERR_UNKNOWN_FILE_EXTENSION|No such file or directory" worker.log; then
+            echo "FAIL: worker entrypoint did not resolve — this is a packaging defect"
+            exit 1
+          fi
+
+          # Reaching LiveKit at all proves the whole chain loaded: tini -> node
+          # -> tsx -> voice-worker.ts -> @livekit/agents.
+          if grep -qiE "livekit|worker|registering|connecting" worker.log; then
+            echo "PASS: worker booted and reached LiveKit connection logic"
+            exit 0
+          fi
+
+          echo "FAIL: worker produced no recognisable startup output"
+          exit 1
+
+      - name: Collect smoke-test logs on failure
+        if: failure()
+        run: |
+          echo "=== smoke-server ===" && docker logs smoke-server 2>&1 || true
+          echo "=== smoke-worker ===" && docker logs smoke-worker 2>&1 || true
+
+      - name: Tear down smoke containers
+        if: always()
+        run: docker rm -f smoke-server smoke-worker 2>/dev/null || true
