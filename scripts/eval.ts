@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+import type { AgentExecutionOptionsBase } from '@mastra/core/agent';
 import { mastra } from '../src/mastra/index';
 import { env } from '../src/lib/env';
 import { answerRelevancyScorer } from '../src/mastra/scorers/_example.scorers';
@@ -40,7 +41,9 @@ const datasetPath = process.argv[2]
   ?? resolve(process.cwd(), 'src/mastra/scorers/datasets/_example.json');
 
 const dataset: Dataset = JSON.parse(readFileSync(datasetPath, 'utf-8'));
-const agent = mastra.getAgent(dataset.agentId);
+// dataset.agentId is free-form JSON; getAgent is typed to the registered
+// agent keys, so narrow through the parameter type rather than hardcoding one.
+const agent = mastra.getAgent(dataset.agentId as Parameters<typeof mastra.getAgent>[0]);
 
 if (!agent) {
   console.error(red(`Agent "${dataset.agentId}" not found in Mastra instance.`));
@@ -61,13 +64,18 @@ for (const evalCase of dataset.cases) {
   let scoringOutput: unknown;
 
   try {
-    const generateOpts = env.USE_AIMOCK
+    // Scorer data costs an extra model round-trip, so only ask for it when
+    // running against a real provider — AIMock serves fixtures and has none.
+    // NOTE: do NOT reach for `Parameters<typeof agent.generate>[1]` here. The
+    // last `generate` overload takes only `messages`, so that lookup resolves
+    // to a 1-tuple and the index is a type error.
+    const generateOpts: AgentExecutionOptionsBase<unknown> = env.USE_AIMOCK
       ? {}
       : { returnScorerData: true };
 
     const result = await agent.generate(
       [{ role: 'user', content: evalCase.input }],
-      generateOpts as Parameters<typeof agent.generate>[1],
+      generateOpts,
     );
 
     // A partial memory/vector failure (e.g. Postgres without the pgvector
