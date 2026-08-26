@@ -17,10 +17,19 @@ services:
   mastra:
     build: *app-build
     image: mastra-voice:latest
-    container_name: mastra
     restart: unless-stopped
-    ports:
-      - "4111:4111" # Coolify assigns the public domain to this service
+    # Only expose on the internal network — Coolify/Traefik routes the public
+    # domain to this service. Do NOT bind a host port here: binding 4111:4111
+    # collides ("address already in use") whenever another agent stack is also
+    # deployed on the same host, and it bypasses Traefik so FQDN routing and
+    # auto-SSL never apply. Local host access is via docker-compose.override.yml.
+    #
+    # `container_name: mastra` removed for the same reason: container names are
+    # global to the Docker host, not namespaced per compose project, so a second
+    # stack claiming `mastra` collides even once the ports are correct. Services
+    # still reach each other by SERVICE name (mastra, worker, postgres, dolt).
+    expose:
+      - "4111"
     env_file:
       - .env
     environment:
@@ -65,7 +74,7 @@ services:
   worker:
     build: *app-build
     image: mastra-voice:latest
-    container_name: mastra-worker
+    # No container_name — same host-global collision reason as the mastra service.
     restart: unless-stopped
     command: ["node", "--import", "tsx", "src/mastra/voice-worker.ts", "start"]
     env_file:
