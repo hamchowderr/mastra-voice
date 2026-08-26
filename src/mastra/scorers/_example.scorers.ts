@@ -7,5 +7,7 @@ export const answerRelevancyScorer = createAnswerRelevancyScorer({
 });
 
 // createToolCallAccuracyScorerCode requires expectedTool at construction time
-// (per-case), so it's used in scripts/eval.ts per case rather than here.
+// (per-case): re-exported for template users wiring per-case tool-accuracy
+// evals in scripts/eval.ts. Kept intentionally though currently unused here.
+// fallow-ignore-next-line unused-export
 export { createToolCallAccuracyScorerCode } from '@mastra/evals/scorers/prebuilt';

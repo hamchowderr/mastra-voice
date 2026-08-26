@@ -16,7 +16,9 @@ mastra.duckdb*
 .dolt/
 .beads-credential-key
 .beads/
+.beads.gate.lock
 
 # Author-only build artifacts (specs, progress, build prompts)
 SPEC/
 prompts/
+.mastracode/

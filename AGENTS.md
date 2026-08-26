@@ -59,7 +59,7 @@ Every agent file must export:
 1. The agent instance with `id`, `name`, `instructions`, `model`, and `scorers`
 2. Voice agents also export nothing special — the voice instance is attached inline
 
-Model string format: `anthropic/claude-haiku-4-5` for text mode (AI SDK provider format). Voice agents use Gemini Live for real-time audio regardless of the text `model` field. Use Anthropic (not OpenAI or Google) for the text model — Mastra's `google/` routing hardcodes the base URL, and Mastra's `openai/` routing uses the Responses API (`/v1/responses`) which AIMock does not match fixtures against. Only Mastra's `anthropic/` routing reads `ANTHROPIC_BASE_URL` and calls `/v1/messages`, which AIMock handles natively.
+Model string format: `anthropic/claude-haiku-4-5` for text mode (AI SDK provider format). Use Anthropic (not OpenAI or Google) for the text model — Mastra's `google/` routing hardcodes the base URL, and Mastra's `openai/` routing uses the Responses API (`/v1/responses`) which AIMock does not match fixtures against. Only Mastra's `anthropic/` routing reads `ANTHROPIC_BASE_URL` and calls `/v1/messages`, which AIMock handles natively.
 
 Scorers are declared inline on the agent. Scorer implementations live in `src/mastra/scorers/`. Every agent should have at least an `answerRelevancy` scorer.
 
@@ -69,34 +69,17 @@ Tools used only by one agent live inline in that agent's file. Shared tools go i
 
 ## Voice Conventions
 
-Voice is attached to the `Agent` via the `voice` prop, not the `Mastra` instance:
+**Realtime voice runs on LiveKit (`@mastra/livekit`), in a SEPARATE worker process.** The Gemini Live STS stack is gone. The worker (`src/mastra/voice-worker.ts`, run via `npm run worker:*`) owns the audio loop; the HTTP server owns the text path. The worker is NOT bundled by `mastra build` — it runs from source via `tsx`. Only one worker flavor runs at a time (same `agentName`).
 
-```typescript
-const agent = new Agent({
-  id: 'myAgent',
-  // ...
-  voice: new GeminiLiveVoice({ apiKey: env.GOOGLE_API_KEY, ... }),
-});
-```
+**Compliance controls live on the worker** (`configuration` + lifecycle hooks): AI-disclosure greeting (non-interruptible, periodic re-disclosure), consent declare→capture→enforce (deny-by-default at `onCallEnd`), agent-initiated hang-up (`endCall` + a `stopWhen` guard), and a per-call Dolt audit ledger (`lib/compliance-ledger.ts`, dormant until `DOLT_*` set). Keep the consent policy keys in sync across `configuration.consentPolicy`, the `recordConsent` tool's `items`, and the agent instructions — nothing enforces that they agree.
 
-**`gemini-live-patch.ts` is required.** Call `patchGeminiLiveForAudio(voice)` immediately after constructing `GeminiLiveVoice`. The patch fixes three library bugs in `@mastra/voice-google-gemini-live`:
-1. Wrong API version (v1alpha → v1beta)
-2. Wrong auth (header → query param)
-3. Deprecated `realtime_input.media_chunks` format (→ `realtime_input.audio`)
-
-Do NOT remove the patch until the library is updated to handle the v1beta API natively.
+**Keep slow work off the caller's clock.** Tool filler (`toolFeedback`) speaks during slow tools; per-turn side effects go in fire-and-forget `onTurnComplete`; expensive close-out (summaries, ledger flush) goes in awaited `onCallEnd`. Memory writes are off-loop by design (`agentManaged: false`).
 
 **Tools auto-flow to voice.** Any tool registered on the agent is automatically available to the voice session. No separate voice tool registration is needed.
 
 **Instructions must be tuned for spoken output.** Voice agent instructions must explicitly prohibit lists, bullet points, markdown, and anything that sounds unnatural when read aloud. Keep responses short — these are spoken, not displayed.
 
-**Two modes, one agent.** The same agent handles:
-- Real-time voice: `npm run voice:cli` → WebSocket → Gemini Live STS
-- Text mode: `POST /api/agents/{id}/generate` → REST → standard LLM
-
-Both modes use the same tools, memory, and instructions. Evals always run in text mode.
-
-**Audio format for mic input**: `getMicrophoneStream({ rate: 16000, fileType: 'raw' })`. Gemini Live expects 16kHz raw PCM. Do not use the default WAV format.
+**Text mode**: `POST /api/agents/{id}/generate` → REST → standard LLM. Evals always run in text mode.
 
 ---
 
@@ -129,16 +112,14 @@ import { createAnswerRelevancyScorer } from '@mastra/evals/scorers/prebuilt';
 
 ## Storage
 
-The Mastra instance uses a composite store:
-- **default domain** → `PostgresStore` (Supabase Postgres via `SUPABASE_DB_URL`)
-- **observability domain** → `DuckDBStore`
-
-Both require an explicit `id` field:
+Every domain routes to one `PostgresStore` (Supabase Postgres via `SUPABASE_DB_URL`). It requires an explicit `id`:
 ```typescript
 new PostgresStore({ id: 'mastra-storage', connectionString: env.SUPABASE_DB_URL })
 ```
 
-`DuckDBStore` requires glibc. Do not run it in Alpine-based containers — use `node:22-slim`.
+**Share the ONE `pgStore` instance across every slot.** Two instances against the same DB race on first boot creating the shared `mastra_ai_spans` type → 23505.
+
+**Storage must tolerate concurrent writers — this is architectural, not a preference.** The HTTP server and the LiveKit voice worker are separate processes, and the worker's job runners are separate processes again; all of them write spans (one per call, plus children per turn for STT/TTS/VAD/LLM-TTFT). A single-writer store cannot serve that. DuckDB was tried here and broke it concretely: the worker's supervised subprocesses failed with `Cannot open file "mastra.duckdb": ... already open in ... (PID N)` and the runner then timed out, so the worker registered but could not answer calls. Do not give `observability` (or any domain) its own single-writer store.
 
 ---
 
@@ -167,10 +148,8 @@ The `MastraEditor` instance gives non-developers a way to iterate on agent promp
 
 - **Never read `process.env` directly** — use `env` from `src/lib/env.ts`
 - **Never construct an AI SDK client before `configureAIMock()`** — AIMock will be bypassed silently
-- **Never remove `patchGeminiLiveForAudio()`** — the library has known v1beta incompatibilities; removing the patch breaks the voice session immediately with code 1007/1008
-- **Never use `audio/wav` or 24kHz for mic input** — Gemini Live requires raw 16kHz PCM; wrong format causes silent failures or poor transcription
 - **Never use lists or markdown in voice agent instructions** — they are spoken aloud and sound unnatural
-- **Never change the Dockerfile base to `node:22-alpine`** — DuckDB native binaries will SIGSEGV at runtime
+- **Never change the Dockerfile base to `node:22-alpine`** — `onnxruntime-node` (fastembed embeddings, and LiveKit's Silero VAD + turn-detector) ships glibc-linked prebuilds with no musl build; `sharp` and the native tokenizers are the same. Stay on `node:22-slim`
 - **Never add a new env var without updating `.env.example`** — new devs won't know it exists
 - **Never skip the Zod schema for a new env var** — process will start with undefined values silently
 - **Never import from `src/mastra/` in `src/lib/`** — creates circular dependency risk
@@ -179,28 +158,11 @@ The `MastraEditor` instance gives non-developers a way to iterate on agent promp
 
 ---
 
-## Voice patch — do not modify lightly
-
-`src/mastra/lib/gemini-live-patch.ts` works around three specific library/API mismatches. If you (the AI coding agent) find yourself wanting to "clean up" or "refactor" this file, STOP.
-
-The patch overrides specific internal methods on `GeminiLiveVoice` instances. The names of those methods (`connect`, `sendEvent`, etc.) are the library's private API and will change when the library updates. Refactoring without testing voice end-to-end will silently break voice for everyone.
-
-If the patch needs changes:
-1. Run `npm run voice:cli` BEFORE making changes — confirm current state works
-2. Make the change
-3. Run `npm run voice:cli` AFTER — confirm voice still works end-to-end
-4. Document what you changed and why in PROGRESS.md
-
-Do not modify this file based on type errors alone. The TypeScript types from the library are intentionally bypassed by the patch (using `as unknown as {...}`). If you "fix" type errors, you'll likely break the runtime behavior.
-
----
-
 ## Ask Before Acting
 
 Stop and confirm with the user before making these changes:
 
 - Changing the boot order in `src/mastra/index.ts`
-- Modifying `gemini-live-patch.ts` — the patch is a carefully calibrated workaround
 - Removing or renaming a scorer that's referenced in a dataset JSON
 - Downgrading a Mastra or voice package version
 - Adding a new `domain` to the composite store
@@ -212,7 +174,6 @@ Stop and confirm with the user before making these changes:
 
 ```bash
 npm run dev          # Start Studio at localhost:4111 (text mode)
-npm run voice:cli    # Start real-time voice CLI (mic + speakers required)
 npm run typecheck    # Verify types before running
 npm run eval         # Run all eval cases in text mode; exits 0 on pass, 1 on fail
 npx supabase start   # Start local Supabase (Docker required)

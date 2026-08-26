@@ -9,13 +9,14 @@ configureAIMock();
 import { Mastra } from '@mastra/core/mastra';
 import { PinoLogger } from '@mastra/loggers';
 import { PostgresStore } from '@mastra/pg';
-import { DuckDBStore } from '@mastra/duckdb';
 import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, DefaultExporter, SensitiveDataFilter, MastraPlatformExporter } from '@mastra/observability';
 import { MastraEditor } from '@mastra/editor';
 import { MCPServer } from '@mastra/mcp';
 import { MastraJwtAuth } from '@mastra/auth';
+import { liveKitConnectionRoute } from '@mastra/livekit';
 import { voiceAssistantAgent } from './agents/_example';
+import { VOICE_AGENT_NAME, resolveVoiceResourceId, resolveVoiceSessionMetadata } from './lib/voice';
 import { answerRelevancyScorer } from './scorers/_example.scorers';
 import { doltTools } from './tools/dolt';
 import { ensureDatabase, doltConfigured } from './lib/dolt';
@@ -45,22 +46,54 @@ const pgStore = new PostgresStore({ id: 'mastra-storage', connectionString: env.
 // behind a Bearer JWT signed with the shared secret. `/health` and `/api/auth/*`
 // stay public (so healthchecks and the Studio login screen still work). Leave
 // the secret unset for open local dev. Shared-secret only — no external provider.
-const server = env.MASTRA_JWT_SECRET
-  ? { auth: new MastraJwtAuth({ secret: env.MASTRA_JWT_SECRET }) }
-  : undefined;
+const server = {
+  // Mints a LiveKit room token so a frontend can join the call. Served at
+  // /voice/livekit/connection-details — NOT under /api, which Mastra reserves for
+  // its own built-ins, so a custom path starting with /api is rejected.
+  //
+  // AUTH POSTURE (deliberate — do not "fix" this to false):
+  // `requiresAuth` defaults to true and we keep it. The route sits outside the
+  // /api/* prefix that MastraJwtAuth gates, but requiresAuth still applies Mastra's
+  // auth to it, so the two line up: with MASTRA_JWT_SECRET set, this route needs
+  // the same Bearer JWT as the rest of the server; with it unset (open local dev)
+  // the whole server is open and so is this. The shipped LiveKit example sets
+  // requiresAuth:false and says "local demo only — protect this route in
+  // production"; this template is published and degit-able, so it ships the safe
+  // posture instead. An unauthenticated route here mints LiveKit tokens for
+  // anyone, letting strangers join rooms and burn your LiveKit minutes.
+  //
+  // MEMORY SCOPE — never from the request body. The route's default reads
+  // agentId/threadId/resourceId out of the POST body, which lets any caller name
+  // someone else's resourceId and read their memory. Both resolvers derive the
+  // scope from the verified JWT subject and mint the thread server-side (see
+  // lib/voice.ts). participantIdentity is overridden for the same reason: its
+  // default falls back to the body-supplied resourceId.
+  apiRoutes: [
+    liveKitConnectionRoute({
+      agentName: VOICE_AGENT_NAME,
+      metadata: resolveVoiceSessionMetadata,
+      participantIdentity: resolveVoiceResourceId,
+    }),
+  ],
+  ...(env.MASTRA_JWT_SECRET
+    ? { auth: new MastraJwtAuth({ secret: env.MASTRA_JWT_SECRET }) }
+    : {}),
+};
 
 export const mastra = new Mastra({
-  ...(server ? { server } : {}),
+  server,
   agents: { voiceAssistant: voiceAssistantAgent },
   scorers: { answerRelevancyScorer },
   mcpServers: { voiceMcp: mcpServer },
+  // Postgres serves every slot. Observability deliberately has no `domains`
+  // override: it falls through to `default`, reusing the ONE pgStore instance
+  // above. Do not give it its own store — a single-writer store (DuckDB) cannot
+  // serve the two-process model, since the LiveKit worker writes spans for every
+  // voice turn from a separate process (and its job subprocesses from more).
   storage: new MastraCompositeStore({
     id: 'composite-storage',
     default: pgStore,
     editor: pgStore,
-    domains: {
-      observability: await new DuckDBStore().getStore('observability'),
-    },
   }),
   logger: new PinoLogger({
     name: 'Mastra',

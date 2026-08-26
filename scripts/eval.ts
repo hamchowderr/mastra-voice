@@ -70,15 +70,35 @@ for (const evalCase of dataset.cases) {
       generateOpts as Parameters<typeof agent.generate>[1],
     );
 
+    // A partial memory/vector failure (e.g. Postgres without the pgvector
+    // extension) does not throw — generate() RETURNS with empty text and steps
+    // while the already-resolved top-level toolCalls survive. Detect that and
+    // fail loudly, instead of letting it masquerade as "tool not called".
+    if ((result as any).error) {
+      throw new Error(`generate returned an error: ${(result as any).error}`);
+    }
+
     responseText = result.text ?? '';
 
-    // Extract tool calls from steps (toolName lives at tc.payload.toolName)
-    const steps = (result as any).steps ?? [];
-    for (const step of steps) {
-      for (const tc of (step.toolCalls ?? [])) {
+    // Tool calls: read from the authoritative top-level result.toolCalls first;
+    // fall back to walking steps for older cores. toolName lives at
+    // tc.payload.toolName (newer) or tc.toolName (older).
+    const collect = (arr: any[] | undefined) => {
+      for (const tc of arr ?? []) {
         const name = tc.payload?.toolName ?? tc.toolName;
         if (name) toolsCalled.push(name);
       }
+    };
+    collect((result as any).toolCalls);
+    if (toolsCalled.length === 0) {
+      for (const step of ((result as any).steps ?? [])) collect(step.toolCalls);
+    }
+
+    // Degraded-result guard: a healthy generate always sets finishReason. If it's
+    // absent AND there's no text AND no tool call, the result came back empty —
+    // surface it as a hard failure rather than a confusing assertion miss.
+    if ((result as any).finishReason == null && !responseText && toolsCalled.length === 0) {
+      throw new Error('generate returned a degraded/empty result (finishReason=undefined) — likely a memory/vector failure');
     }
 
     scoringInput = (result as any).scoringData?.input;

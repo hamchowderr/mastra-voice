@@ -30,12 +30,14 @@ const envSchema = z
     OPENAI_API_KEY: z.string().optional(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
 
-    // Voice (Gemini Live) — separate from GOOGLE_GENERATIVE_AI_API_KEY (different SDK convention)
-    GOOGLE_API_KEY: z.string().min(1, 'GOOGLE_API_KEY required for voice integration'),
-    GEMINI_LIVE_MODEL: z.string().min(1).default('gemini-3.1-flash-live-preview'),
-    GEMINI_LIVE_SPEAKER: z
-      .enum(['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'])
-      .default('Puck'),
+    // LiveKit — the realtime voice transport. Required: the worker cannot
+    // connect without all three, so fail at boot rather than at call time.
+    LIVEKIT_URL: z
+      .string()
+      .url()
+      .refine((v) => v.startsWith('ws://') || v.startsWith('wss://'), 'Must be a ws:// or wss:// URL'),
+    LIVEKIT_API_KEY: z.string().min(1, 'LIVEKIT_API_KEY required for voice'),
+    LIVEKIT_API_SECRET: z.string().min(1, 'LIVEKIT_API_SECRET required for voice'),
 
     USE_AIMOCK: boolish.default(false),
     AIMOCK_URL: z.string().url().default('http://localhost:4010'),
@@ -73,4 +75,5 @@ if (!parsed.success) {
 }
 
 export const env = Object.freeze(parsed.data);
+/** @public */
 export type Env = typeof env;

@@ -1,8 +1,16 @@
 # syntax=docker/dockerfile:1.7
 
+# ONE image, TWO services (voice-9jm.11). A voice deployment is two long-running
+# processes off the same code: the Mastra HTTP server (+ Studio) and the LiveKit
+# worker. This image can run either — the default CMD starts the server; the
+# `worker` service in docker-compose.yml overrides the command to start the worker.
+# Workers scale by call volume, the server by request volume, so they run as
+# separate containers (single-container supervision is demo-only).
+#
 # Use node:22-slim (Debian/glibc), NOT node:22-alpine (musl).
-# DuckDB native modules segfault on Alpine even with gcompat.
-# This makes the image ~676MB instead of ~150MB. See README "Deployment Notes".
+# onnxruntime-node (fastembed embeddings + LiveKit's Silero VAD and turn-detector),
+# sharp, and the native tokenizers all ship glibc-linked prebuilds with no musl
+# build — they fail on Alpine even with gcompat. See README "Deployment Notes".
 # ─── Stage 1: build ───────────────────────────────────────────────
 FROM node:22-slim AS build
 WORKDIR /app
@@ -14,18 +22,45 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+# `mastra build` imports the app, and lib/env.ts validates env at import time (it
+# THROWS on missing vars). Provide BUILD-TIME stubs so the bundle can be produced.
+# These live ONLY in this build stage — the runtime stage is a separate FROM, so
+# real values are injected there at runtime via env_file. Nothing secret is baked.
+ENV MASTRA_TELEMETRY_DISABLED=1 \
+    APP_SECRET=build_time_stub_build_time_stub_32 \
+    SUPABASE_URL=https://stub.supabase.co \
+    SUPABASE_ANON_KEY=stub \
+    SUPABASE_SERVICE_ROLE_KEY=stub \
+    SUPABASE_DB_URL=postgres://stub:stub@localhost:5432/stub \
+    ANTHROPIC_API_KEY=stub \
+    LIVEKIT_URL=wss://stub.livekit.cloud \
+    LIVEKIT_API_KEY=stub \
+    LIVEKIT_API_SECRET=stub
 # --studio bundles the Studio SPA so it can be served self-hosted in production.
 RUN npx mastra build --studio
 # Bake Studio config: auto-detect server from same origin → no "enter URL" form,
 # works for any deploy domain with no per-deploy config.
 RUN node scripts/bake-studio.mjs
 
+# Bake LiveKit model files so worker cold starts don't fetch them mid-connect.
+# Silero VAD ships INSIDE @livekit/agents-plugin-silero (node_modules), so it's
+# already baked; this fetches the turn-detector model into HF_HOME. Best-effort:
+# the standalone CLI only downloads for plugins it can register, so if it fetches
+# nothing the worker pulls the model once on first cold start (then it's cached).
+ENV HF_HOME=/app/.cache/huggingface
+RUN mkdir -p "$HF_HOME" && (npx livekit-agents download-files || echo "download-files: nothing baked — worker will fetch on first cold start")
+
+# Drop devDependencies (mastra CLI, typescript, types) AFTER the build: the runtime
+# server runs the built bundle and the worker runs from source via tsx (a PRODUCTION
+# dependency, self-contained — it needs neither the mastra CLI nor the typescript pkg).
+RUN npm prune --omit=dev
+
 # ─── Stage 2: runtime ─────────────────────────────────────────────
 FROM node:22-slim AS runtime
 WORKDIR /app
 
 # tini — proper signal handling for SIGTERM
-# node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (e.g. DuckDB)
+# node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (onnxruntime, sharp)
 RUN apt-get update && apt-get install -y --no-install-recommends tini wget && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 1001 nodejs && \
@@ -37,14 +72,29 @@ ENV PORT=4111
 # Serve the bundled Studio UI (chat, traces, editor) from the same server.
 # Secure it behind auth before exposing publicly (see Mastra Studio auth docs).
 ENV MASTRA_STUDIO_PATH=/app/.mastra/output/studio
+# Where the baked turn-detector model lives (must match the build stage).
+ENV HF_HOME=/app/.cache/huggingface
 
+# Server bundle — the self-contained Mastra HTTP service (default CMD).
 COPY --from=build --chown=mastra:nodejs /app/.mastra/output ./.mastra/output
+# Worker runtime — the LiveKit worker runs from SOURCE via tsx (deliberately NOT
+# bundled: bundling would drag in LiveKit's native deps). It needs the production
+# node_modules, the source tree, and the manifest/tsconfig.
+COPY --from=build --chown=mastra:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=mastra:nodejs /app/src ./src
+COPY --from=build --chown=mastra:nodejs /app/package.json ./package.json
+COPY --from=build --chown=mastra:nodejs /app/tsconfig.json ./tsconfig.json
+# Baked LiveKit model files (turn-detector). Silero VAD already lives in node_modules.
+COPY --from=build --chown=mastra:nodejs /app/.cache ./.cache
 
 USER mastra
 EXPOSE 4111
 
+# Server-only healthcheck (the worker has no HTTP port; its compose service disables it).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:4111/health > /dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
+# Default service = Mastra HTTP server. The `worker` service in docker-compose.yml
+# overrides this with:  node --import tsx src/mastra/voice-worker.ts start
 CMD ["node", ".mastra/output/index.mjs"]

@@ -16,6 +16,7 @@ const PERSONA = process.env.AGENT_PERSONA || 'Mastra Agent <agent@otaku.local>';
 const DIRECTOR = process.env.DIRECTOR || 'operator';
 const ATTRIBUTION = { author: PERSONA, directedBy: DIRECTOR, autonomy: 'directed' as const };
 
+/** @public — Dolt tool; consumed via `doltTools` and importable directly by template users. */
 export const doltQuery = createTool({
   id: 'doltQuery',
   description: 'Run a read-only SQL SELECT against the versioned Dolt database. Returns rows.',
@@ -30,6 +31,7 @@ export const doltQuery = createTool({
   },
 });
 
+/** @public */
 export const doltWrite = createTool({
   id: 'doltWrite',
   description:
@@ -48,6 +50,7 @@ export const doltWrite = createTool({
   },
 });
 
+/** @public */
 export const doltHistory = createTool({
   id: 'doltHistory',
   description: 'Show recent commit history of the database (who changed what, when, why).',

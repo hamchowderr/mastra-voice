@@ -4,18 +4,32 @@
 # postgres + dolt stay private on the internal network).
 #
 # Secrets come from .env / Coolify env (never commit them):
-#   APP_SECRET, POSTGRES_PASSWORD, DOLT_PASSWORD, GOOGLE_API_KEY (voice), and an
-#   LLM key (ANTHROPIC_API_KEY / OPENAI_API_KEY). See .env.example.
+#   APP_SECRET, POSTGRES_PASSWORD, DOLT_PASSWORD, and an LLM key
+#   (ANTHROPIC_API_KEY / OPENAI_API_KEY). See .env.example.
+
+# Shared build for the two app services (server + worker): one Dockerfile, one
+# image, built once and reused. They differ only in the command they run.
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
 
 services:
   mastra:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: mastra
+    build: *app-build
+    image: mastra-voice:latest
     restart: unless-stopped
-    ports:
-      - "4111:4111" # Coolify assigns the public domain to this service
+    # Only expose on the internal network — Coolify/Traefik routes the public
+    # domain to this service. Do NOT bind a host port here: binding 4111:4111
+    # collides ("address already in use") whenever another agent stack is also
+    # deployed on the same host, and it bypasses Traefik so FQDN routing and
+    # auto-SSL never apply. Local host access is via docker-compose.override.yml.
+    #
+    # `container_name: mastra` removed for the same reason: container names are
+    # global to the Docker host, not namespaced per compose project, so a second
+    # stack claiming `mastra` collides even once the ports are correct. Services
+    # still reach each other by SERVICE name (mastra, worker, postgres, dolt).
+    expose:
+      - "4111"
     env_file:
       - .env
     environment:
@@ -46,6 +60,52 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # LiveKit worker — the realtime audio loop. SAME image as `mastra`, just a
+  # different command. It connects OUTBOUND to LiveKit (no inbound ports, no public
+  # domain) and runs from source via tsx. Keep >=1 always-on: with zero workers a
+  # call connects to silence, and scale-to-zero deregisters it from LiveKit. Only
+  # ONE worker flavor can run at a time (they all register under the same agentName).
+  worker:
+    build: *app-build
+    image: mastra-voice:latest
+    # No container_name — same host-global collision reason as the mastra service.
+    restart: unless-stopped
+    command: ["node", "--import", "tsx", "src/mastra/voice-worker.ts", "start"]
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      # Same stores as the server — both processes write concurrently (Postgres
+      # handles that; a single-writer store would not).
+      - SUPABASE_DB_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      - DOLT_HOST=dolt
+      - DOLT_PORT=3306
+      - DOLT_USER=root
+      - DOLT_PASSWORD=${DOLT_PASSWORD}
+      - DOLT_DATABASE=${DOLT_DATABASE:-appdb}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dolt:
+        condition: service_healthy
+    # No HTTP endpoint to probe — disable the image's server healthcheck here.
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          # Heavier than the server: the main process (~2GB, fastembed/onnx) plus
+          # one prewarmed idle runner (numIdleProcesses=1, another ~2GB) plus active
+          # job runners during calls. Give it real headroom on a box that can spare it.
+          memory: 4G
+        reservations:
+          memory: 2G
     logging:
       driver: json-file
       options:
