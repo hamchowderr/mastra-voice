@@ -21,3 +21,4 @@ mastra.duckdb*
 # Author-only build artifacts (specs, progress, build prompts)
 SPEC/
 prompts/
+.mastracode/
