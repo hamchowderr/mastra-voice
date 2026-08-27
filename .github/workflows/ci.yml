@@ -39,6 +39,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run typecheck
+      # Unit tests need no database, no API key and no Docker, so they belong in
+      # the cheapest job rather than behind the eval gate.
+      - run: npm test
 
   build:
     runs-on: ubuntu-latest

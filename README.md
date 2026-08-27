@@ -271,9 +271,20 @@ Testing here comes in three tiers that cover genuinely different things. The fir
 
 | Tier | Exercises | Covers audio? | Runs where |
 | --- | --- | --- | --- |
+| 0. Unit tests | Pure logic — memory scoping, consent, tool guards | No | Anywhere, ~1s |
 | 1. Eval gate | Reply content, tool calls, scorers | No | CI, every PR |
 | 2. Agent simulations | Multi-turn conversation vs. a simulated caller | Yes, in audio mode | LiveKit Cloud, on demand |
 | 3. Real call | Barge-in, turn-taking, disclosure timing | **Yes** | Your ears |
+
+### 0️⃣ Unit tests — no infrastructure at all
+
+```bash
+npm test             # vitest. No Docker, no database, no API key
+```
+
+These cover the logic that must hold regardless of what any model says: that a voice call's memory scope comes from the verified JWT and **never** from the request body (the guard against reading another caller's memory), that consent is deny-by-default and doesn't leak between callers, and that `evaluateMath`'s character allowlist holds — it builds a `new Function` from caller input, so that check is the only thing standing between a caller and arbitrary code.
+
+They need nothing running, so there's no reason not to run them on every edit.
 
 ### 1️⃣ Eval gate — automated, runs in CI
 
@@ -291,7 +302,7 @@ npx -y -p @copilotkit/aimock aimock -c aimock.json   # terminal 1
 USE_AIMOCK=true npm run eval                         # terminal 2
 ```
 
-CI runs four jobs on every PR: **typecheck**, **eval**, **build**, and **docker** — where the image is built *and both containers are started*, so a broken entrypoint fails CI instead of a deploy.
+CI runs four jobs on every PR: **typecheck** (which also runs the unit tests above), **eval**, **build**, and **docker** — where the image is built *and both containers are started*, so a broken entrypoint fails CI instead of a deploy.
 
 Each case is one fixed input with asserted tool calls and scorer output. That makes it a regression gate: it catches a change breaking something you already knew to check.
 
