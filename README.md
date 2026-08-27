@@ -330,6 +330,16 @@ Cost is **RAM-dominated**: each concurrent call spins a job runner that re-impor
 
 See [`AGENTS.md`](AGENTS.md) for conventions, boot order, import rules, voice-specific patterns, and things to never do.
 
+Three skills are vendored into `.claude/skills/` and committed, so a plain `git clone` is the only install step:
+
+| Skill | Covers |
+| --- | --- |
+| `mastra` | Mastra APIs, verified against the installed version rather than model memory |
+| `livekit-agents` | Worker lifecycle, room handling, the audio pipeline |
+| `livekit-simulations` | Generating and running scenario tests against the agent |
+
+`livekit-agents` is written for LiveKit Cloud; [`AGENTS.md`](AGENTS.md#scope-livekit-agents-before-following-it) says which parts to ignore here. Versions are pinned in `skills-lock.json`.
+
 ---
 
 ## 📜 License

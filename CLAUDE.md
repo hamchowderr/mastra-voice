@@ -50,20 +50,15 @@ bd close <id>         # Complete work
 <!-- END BEADS INTEGRATION -->
 
 
-## Build & Test
+## Skills
 
-_Add your build and test commands here_
+`.claude/skills/` ships `mastra`, `livekit-agents`, and `livekit-simulations`,
+committed to the repo — no install step. Read the **Skills** section of
+[`AGENTS.md`](AGENTS.md) before following `livekit-agents`: it is written for
+LiveKit Cloud and parts of it do not apply to this stack.
 
-```bash
-# Example:
-# npm install
-# npm test
-```
+## Everything else
 
-## Architecture Overview
-
-_Add a brief overview of your project architecture_
-
-## Conventions & Patterns
-
-_Add your project-specific conventions here_
+Conventions, boot order, import rules, voice and telephony patterns, storage,
+and things to never do all live in [`AGENTS.md`](AGENTS.md). Build and test
+commands are in the [README](README.md).

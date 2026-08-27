@@ -4,6 +4,50 @@ This file is for AI coding agents (Claude Code, Cursor, Copilot, etc.) working o
 
 ---
 
+## Skills (vendored — no install step)
+
+Three skills live in `.claude/skills/` and are committed to the repo, so every
+clone has them. They are real files, not symlinks: `git clone` is the whole
+install.
+
+| Skill | Reach for it when |
+| --- | --- |
+| `mastra` | Touching any Mastra API. Its own first rule is the important one: do not trust model memory — read `node_modules/@mastra/*/dist/docs/` for the exact installed version. |
+| `livekit-agents` | Working on the worker, room lifecycle, or audio pipeline. |
+| `livekit-simulations` | Generating and running scenario tests against the voice agent. |
+
+### Scope `livekit-agents` before following it
+
+It is written for LiveKit Cloud and says so in its own opening paragraph. Two of
+its assumptions do not hold here:
+
+- **LiveKit Inference is not in this stack.** `MastraVoiceAgent` supplies
+  `llmNode`, so LiveKit's `llm` slot is never used and the model comes from
+  Mastra's router. Skip every Inference recommendation.
+- **Agent structure lives in Mastra, not the LiveKit SDK.** Its guidance on
+  `Agent` classes, handoffs, and tasks describes a layer this project does not
+  use. Take agent, tool, and memory design from the `mastra` skill instead.
+
+What does transfer: VAD, turn detection, barge-in, worker lifecycle, and its
+insistence on tests.
+
+### Refreshing them
+
+Versions are pinned by content hash in `skills-lock.json`. To pull updates:
+
+```bash
+npx skills add mastra-ai/skills     --skill '*' --agent claude-code --copy -y
+npx skills add livekit/agent-skills --skill '*' --agent claude-code --copy -y
+```
+
+`--copy` is required. Without it the CLI symlinks into `.claude/skills/`, and a
+symlink is useless to anyone who clones the repo on another machine.
+
+Note `.gitignore` deliberately tracks `.claude/skills/` while ignoring the rest
+of `.claude/` — settings there are personal, skills are shared.
+
+---
+
 ## Boot Order (critical)
 
 `src/mastra/index.ts` must initialize in this exact order:
