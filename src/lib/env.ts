@@ -51,13 +51,23 @@ const envSchema = z
     // secret. Leave unset for open local dev. Must be HS256-safe (>=32 chars).
     MASTRA_JWT_SECRET: z.string().min(32, 'MASTRA_JWT_SECRET must be at least 32 chars').optional(),
   })
-  .refine(
-    (e) => Boolean(e.ANTHROPIC_API_KEY || e.OPENAI_API_KEY),
-    {
-      message:
-        'At least one LLM provider key required (ANTHROPIC_API_KEY or OPENAI_API_KEY)',
-    },
-  );
+  // The agent's model is an @ai-sdk/anthropic instance (see lib/model.ts), so
+  // ANTHROPIC_API_KEY is the one that decides whether a call can produce a reply.
+  // Accepting OPENAI_API_KEY alone used to satisfy this check: the process booted,
+  // the worker registered, calls connected — and then every turn failed with
+  // `401 x-api-key header is required` and the caller heard silence. Fail at boot
+  // with a readable message instead of at the first turn with a 401.
+  //
+  // Under AIMock, configureAIMock() substitutes a placeholder key, so any
+  // non-empty value is fine there.
+  .refine((e) => Boolean(e.ANTHROPIC_API_KEY) || e.USE_AIMOCK, {
+    path: ['ANTHROPIC_API_KEY'],
+    message:
+      'ANTHROPIC_API_KEY is required — the agent model is an @ai-sdk/anthropic ' +
+      'instance, so without it every call answers with silence. Set USE_AIMOCK=true ' +
+      'to run against AIMock instead. OPENAI_API_KEY does not substitute for it; ' +
+      'it is only used by the answerRelevancy scorer.',
+  });
 
 const parsed = envSchema.safeParse(process.env);
 

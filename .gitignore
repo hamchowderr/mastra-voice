@@ -27,3 +27,6 @@ mastra.duckdb*
 SPEC/
 prompts/
 .mastracode/
+
+# Built simulation config — authored.yaml and risks.yaml are the sources
+simulations/scenarios.yaml
