@@ -7,6 +7,7 @@ import { endCallTool } from '../tools/end-call';
 import { answerRelevancyScorer } from '../scorers/_example.scorers';
 import { defaultInputProcessors, defaultOutputProcessors } from '../lib/processors';
 import { createDefaultMemory } from '../lib/memory';
+import { voiceModel } from '../lib/model';
 
 /**
  * Hard-stop the agent loop the moment a step calls `toolName`. Models tend to
@@ -66,14 +67,16 @@ Tools:
 Ending the call:
 - When the caller says goodbye or the conversation is clearly finished, say a brief spoken farewell FIRST, then call endCall as your final action. The goodbye must be said before you call the tool — calling it ends the call.`,
   // Non-reasoning model on purpose: time-to-first-token is what the caller hears.
-  // A reasoning model (e.g. openai/gpt-5-mini) spends seconds "thinking" before it
-  // speaks on every turn + tool round-trip — it dominates conversational latency.
-  // Anthropic also routes cleanly through AIMock, which the OpenAI router does not
-  // (it uses /v1/responses, which AIMock can't match fixtures against), so Haiku keeps
-  // the CI eval green. Non-reasoning swap-in: 'openai/gpt-4.1-mini' — usable at
-  // runtime, but it will break the AIMock eval gate. CI validates the text path only;
-  // AIMock cannot intercept the WebRTC audio loop.
-  model: 'anthropic/claude-haiku-4-5',
+  // A reasoning model spends seconds "thinking" before it speaks on every turn +
+  // tool round-trip — it dominates conversational latency.
+  //
+  // An @ai-sdk/anthropic instance rather than the model-router string, and a
+  // FUNCTION rather than a value — see lib/model.ts for why that distinction is
+  // load-bearing for the AIMock eval gate. Anthropic also routes cleanly through
+  // AIMock, which OpenAI does not (it uses /v1/responses, which AIMock can't match
+  // fixtures against). CI validates the text path only; AIMock cannot intercept the
+  // WebRTC audio loop.
+  model: voiceModel,
   tools: { getCurrentTime, evaluateMath, recordConsent: recordConsentTool, endCall: endCallTool },
   // Structural stop-on-goodbye (voice-9jm.18): the loop never runs the step after
   // endCall, so the model cannot speak past its farewell. Determinism in code, not

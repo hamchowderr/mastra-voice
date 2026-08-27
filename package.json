@@ -22,6 +22,7 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.44",
     "@livekit/agents": "^1.7.0",
     "@livekit/agents-plugin-livekit": "^1.7.0",
     "@livekit/agents-plugin-silero": "^1.7.0",

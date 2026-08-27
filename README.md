@@ -229,16 +229,18 @@ Three external legs per call. None of the audio stays on your host.
 
 **Inference carries STT and TTS only.** The model never touches it: `MastraVoiceAgent` supplies LiveKit's `llmNode`, so the `llm` slot goes unused and replies come from Mastra's model router — which is why the LLM leg above points at Anthropic and not at the gateway.
 
-**The model is one string, and Anthropic is only the default.** Replies come from Mastra's model router, which resolves `provider/model` against a registry of **187 providers** bundled inside `@mastra/core` — offline, no lookup service. Swapping providers is a one-line change in `src/mastra/agents/_example.ts` plus that provider's key in `.env`:
+**Anthropic is only the default.** Mastra takes a model two ways, and both work on the voice path — `@mastra/livekit` never inspects the model:
 
-```ts
-model: 'anthropic/claude-haiku-4-5',   // needs ANTHROPIC_API_KEY
-model: 'openai/gpt-4.1-mini',          // needs OPENAI_API_KEY
-```
+| Form | Looks like | Good for |
+| --- | --- | --- |
+| Router string | `model: 'anthropic/claude-haiku-4-5'` | **187 providers** with no imports, resolved against a registry bundled inside `@mastra/core` |
+| AI SDK instance | `model: voiceModel` → `createAnthropic({...})('claude-haiku-4-5')` | Per-provider control the string can't express: custom `fetch`, headers, middleware |
 
-Run `node .claude/skills/mastra/scripts/provider-registry.mjs --list` to see every provider your installed version supports.
+This project uses the **instance**, in `src/mastra/lib/model.ts`. Run `node .claude/skills/mastra/scripts/provider-registry.mjs --list` to see every provider the string form supports.
 
-This needs **no Mastra Platform account** — the router is part of `@mastra/core` and calls the provider directly from your own process with your own key. It is also not the Vercel AI SDK: this project has no `ai` dependency and calls no `generateText`/`streamText`. `@mastra/core` depends only on `@ai-sdk/provider`, the interface *spec* other providers implement, which is why AIMock can redirect a provider by setting its base URL.
+Either way there is **no Mastra Platform account** involved — the model is called directly from your own process with your own key.
+
+> **If you switch to an AI SDK instance yourself, keep it a function.** `createAnthropic()` captures its base URL when constructed, and agents are built at import time — before `configureAIMock()` rewrites it. A module-scope singleton bakes in the real endpoint, and evals bill your provider instead of hitting the mock. Mastra resolves a factory per request, which is late enough. See the comment in `lib/model.ts`.
 
 Self-hosting the LiveKit server does not move STT/TTS — the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
 

@@ -126,7 +126,11 @@ Every agent file must export:
 1. The agent instance with `id`, `name`, `instructions`, `model`, and `scorers`
 2. Voice agents also export nothing special — the voice instance is attached inline
 
-Model string format: `anthropic/claude-haiku-4-5` for text mode (AI SDK provider format). Use Anthropic (not OpenAI) for the text model — Mastra's `openai/` routing uses the Responses API (`/v1/responses`), which AIMock does not match fixtures against. Mastra's `anthropic/` routing reads `ANTHROPIC_BASE_URL` and calls `/v1/messages`, which AIMock handles natively. **No Google providers** — this project uses none.
+The model is an **`@ai-sdk/anthropic` instance**, not a model-router string. Mastra accepts either — `MastraModelConfig` includes `LanguageModelV1..V4`, the AI SDK's own interfaces — and `@mastra/livekit` never inspects the model, so the voice path follows the agent.
+
+It is wired as a **function** (`model: voiceModel`), and that is not stylistic. `createAnthropic()` captures its base URL at construction; agents are built at module scope, which runs before `configureAIMock()` can rewrite `ANTHROPIC_BASE_URL`. A module-scope `anthropic(...)` singleton would bake in the real endpoint and every eval would silently bill Anthropic instead of hitting the mock. Mastra's `model` is a `DynamicArgument`, so a factory is resolved per request — after boot. **Never collapse `lib/model.ts` into a top-level constant.**
+
+Stay on Anthropic for the text model: OpenAI's Responses API (`/v1/responses`) is not something AIMock can match fixtures against, while `/v1/messages` it handles natively. **No Google providers** — this project uses none.
 
 Scorers are declared inline on the agent. Scorer implementations live in `src/mastra/scorers/`. Every agent should have at least an `answerRelevancy` scorer.
 
