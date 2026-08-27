@@ -19,6 +19,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ libasound2-dev && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
+
+# onnxruntime-node's postinstall pulls the CUDA/GPU build from api.nuget.org.
+# The container has no GPU, and that fetch is a recurring timeout (it broke CI
+# three times on 2026-08-26). The CPU runtime ships inside the npm package, and
+# fastembed + LiveKit's Silero VAD both use it, so skipping only removes a
+# download that would be discarded — and makes consumer builds faster and less
+# network-fragile too.
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 RUN npm ci
 
 COPY . .
