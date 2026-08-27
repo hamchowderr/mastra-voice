@@ -122,7 +122,6 @@ jobs:
           SUPABASE_DB_URL: postgres://postgres:postgres@localhost:5432/mastra
           ANTHROPIC_API_KEY: stub
           OPENAI_API_KEY: stub
-          GOOGLE_GENERATIVE_AI_API_KEY: stub
           LIVEKIT_URL: wss://stub.livekit.cloud
           LIVEKIT_API_KEY: stub
           LIVEKIT_API_SECRET: stub

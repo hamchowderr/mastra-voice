@@ -68,12 +68,11 @@ Ending the call:
   // Non-reasoning model on purpose: time-to-first-token is what the caller hears.
   // A reasoning model (e.g. openai/gpt-5-mini) spends seconds "thinking" before it
   // speaks on every turn + tool round-trip — it dominates conversational latency.
-  // Anthropic is also the only provider that routes cleanly through AIMock (Mastra's
-  // Google router hardcodes its base URL; the OpenAI router uses /v1/responses, which
-  // AIMock can't match), so Haiku keeps the CI eval green. Non-reasoning swap-ins:
-  // 'google/gemma-4-31b-it' (LiveKit's voice-tuned default) or 'openai/gpt-4.1-mini'
-  // (the shipped example). CI validates the text path only — AIMock can't intercept
-  // the WebRTC audio loop.
+  // Anthropic also routes cleanly through AIMock, which the OpenAI router does not
+  // (it uses /v1/responses, which AIMock can't match fixtures against), so Haiku keeps
+  // the CI eval green. Non-reasoning swap-in: 'openai/gpt-4.1-mini' — usable at
+  // runtime, but it will break the AIMock eval gate. CI validates the text path only;
+  // AIMock cannot intercept the WebRTC audio loop.
   model: 'anthropic/claude-haiku-4-5',
   tools: { getCurrentTime, evaluateMath, recordConsent: recordConsentTool, endCall: endCallTool },
   // Structural stop-on-goodbye (voice-9jm.18): the loop never runs the step after

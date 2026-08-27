@@ -59,7 +59,7 @@ Every agent file must export:
 1. The agent instance with `id`, `name`, `instructions`, `model`, and `scorers`
 2. Voice agents also export nothing special — the voice instance is attached inline
 
-Model string format: `anthropic/claude-haiku-4-5` for text mode (AI SDK provider format). Use Anthropic (not OpenAI or Google) for the text model — Mastra's `google/` routing hardcodes the base URL, and Mastra's `openai/` routing uses the Responses API (`/v1/responses`) which AIMock does not match fixtures against. Only Mastra's `anthropic/` routing reads `ANTHROPIC_BASE_URL` and calls `/v1/messages`, which AIMock handles natively.
+Model string format: `anthropic/claude-haiku-4-5` for text mode (AI SDK provider format). Use Anthropic (not OpenAI) for the text model — Mastra's `openai/` routing uses the Responses API (`/v1/responses`), which AIMock does not match fixtures against. Mastra's `anthropic/` routing reads `ANTHROPIC_BASE_URL` and calls `/v1/messages`, which AIMock handles natively. **No Google providers** — this project uses none.
 
 Scorers are declared inline on the agent. Scorer implementations live in `src/mastra/scorers/`. Every agent should have at least an `answerRelevancy` scorer.
 
@@ -69,7 +69,7 @@ Tools used only by one agent live inline in that agent's file. Shared tools go i
 
 ## Voice Conventions
 
-**Realtime voice runs on LiveKit (`@mastra/livekit`), in a SEPARATE worker process.** The Gemini Live STS stack is gone. The worker (`src/mastra/voice-worker.ts`, run via `npm run worker:*`) owns the audio loop; the HTTP server owns the text path. The worker is NOT bundled by `mastra build` — it runs from source via `tsx`. Only one worker flavor runs at a time (same `agentName`).
+**Realtime voice runs on LiveKit (`@mastra/livekit`), in a SEPARATE worker process.** The worker (`src/mastra/voice-worker.ts`, run via `npm run worker:*`) owns the audio loop; the HTTP server owns the text path. The worker is NOT bundled by `mastra build` — it runs from source via `tsx`. Only one worker flavor runs at a time (same `agentName`).
 
 **Compliance controls live on the worker** (`configuration` + lifecycle hooks): AI-disclosure greeting (non-interruptible, periodic re-disclosure), consent declare→capture→enforce (deny-by-default at `onCallEnd`), agent-initiated hang-up (`endCall` + a `stopWhen` guard), and a per-call Dolt audit ledger (`lib/compliance-ledger.ts`, dormant until `DOLT_*` set). Keep the consent policy keys in sync across `configuration.consentPolicy`, the `recordConsent` tool's `items`, and the agent instructions — nothing enforces that they agree.
 
@@ -205,7 +205,7 @@ npm run eval         # Run all eval cases in text mode; exits 0 on pass, 1 on fa
 npx supabase start   # Start local Supabase (Docker required)
 ```
 
-Eval runs with `USE_AIMOCK=false` hit the real Google API and incur cost. Use `USE_AIMOCK=true` with AIMock running for free deterministic runs during development.
+Eval runs with `USE_AIMOCK=false` hit the real Anthropic API and incur cost. Use `USE_AIMOCK=true` with AIMock running for free deterministic runs during development.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker

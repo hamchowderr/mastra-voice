@@ -164,7 +164,7 @@ curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
 
 ### A2A
 
-Google's agent-to-agent standard, JSON-RPC over HTTP. Use it when an agent in CrewAI, LangGraph, ADK, or anything A2A-compatible needs to delegate here.
+The open agent-to-agent standard, JSON-RPC over HTTP. Use it when an agent in CrewAI, LangGraph, ADK, or anything A2A-compatible needs to delegate here.
 
 ```bash
 curl http://localhost:4111/api/.well-known/voiceAssistant/agent-card.json

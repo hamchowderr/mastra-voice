@@ -28,7 +28,6 @@ const envSchema = z
 
     ANTHROPIC_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
-    GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
 
     // LiveKit — the realtime voice transport. Required: the worker cannot
     // connect without all three, so fail at boot rather than at call time.
@@ -53,10 +52,10 @@ const envSchema = z
     MASTRA_JWT_SECRET: z.string().min(32, 'MASTRA_JWT_SECRET must be at least 32 chars').optional(),
   })
   .refine(
-    (e) => Boolean(e.ANTHROPIC_API_KEY || e.OPENAI_API_KEY || e.GOOGLE_GENERATIVE_AI_API_KEY),
+    (e) => Boolean(e.ANTHROPIC_API_KEY || e.OPENAI_API_KEY),
     {
       message:
-        'At least one LLM provider key required (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY)',
+        'At least one LLM provider key required (ANTHROPIC_API_KEY or OPENAI_API_KEY)',
     },
   );
 
