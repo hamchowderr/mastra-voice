@@ -5,6 +5,11 @@ import { env } from '../lib/env';
 import { configureAIMock } from './lib/aimock';
 configureAIMock();
 
+// Server version is read from package.json, never hardcoded: a literal here
+// silently drifts every release (it said 0.1.0 while the package was 0.2.0).
+// `with { type: 'json' }` is the standard ESM JSON import attribute.
+import pkg from '../../package.json' with { type: 'json' };
+
 // 3. Mastra imports — agents/tools constructed below now see the right base URLs
 import { Mastra } from '@mastra/core/mastra';
 import { PinoLogger } from '@mastra/loggers';
@@ -29,7 +34,7 @@ if (doltConfigured) {
 const mcpServer = new MCPServer({
   id: 'voice-mcp',
   name: 'template-mastra-voice',
-  version: '0.1.0',
+  version: pkg.version,
   description: 'MCP server exposing template-mastra-voice agents + Dolt tools',
   // Dolt versioned-data tools exposed over MCP. To let the voice agent call
   // them directly, spread `...doltTools` into the agent's own `tools`.

@@ -331,6 +331,29 @@ The worker ships a regulated-voice surface most tutorials skip — configured in
 - **Agent-initiated hang-up** — the agent says goodbye then calls `endCall`; the worker waits for the closing words, plays a guaranteed sign-off, and disconnects. A `stopWhen` guard structurally stops the loop so the model can't speak past its goodbye.
 - **Versioned audit ledger** — disclosure + consent + hang-up records are committed to **Dolt** as one attributed, diffable commit per call (`src/mastra/lib/compliance-ledger.ts`), off the caller's clock. Dormant until `DOLT_*` is set + the compose `dolt` service runs.
 
+### Where call data goes (data residency)
+
+The compliance controls above are about *what you tell the caller*. This is about *where their voice actually travels* — a separate question, and one you must answer for yourself before deploying to regulated callers.
+
+A single call involves three external parties beyond your own infrastructure:
+
+| Leg | Goes to | Carrying |
+|---|---|---|
+| Transport | Your `LIVEKIT_URL` (LiveKit Cloud unless self-hosted) | The live audio stream |
+| STT + TTS | `agent-gateway.livekit.cloud` (**US**, hardcoded default) | Raw caller audio, and the synthesized reply |
+| LLM | Anthropic | The transcribed conversation + memory context |
+
+**Caller audio does not stay on your VPS.** `stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit *Inference* model strings: they resolve to LiveKit's US agent-gateway, authenticated with your `LIVEKIT_API_KEY`. That is the convenience — one credential, no separate Deepgram or Cartesia account — and it is also the trade.
+
+**Self-hosting the LiveKit server does not change this.** The inference endpoint is derived independently of `LIVEKIT_URL`. To keep STT/TTS off LiveKit Cloud you must either:
+
+- set `LIVEKIT_INFERENCE_URL` to your own gateway, or
+- pass real plugin instances instead of model strings (`stt: new deepgram.STT({...})`), using your own provider accounts and their regions.
+
+Likewise, the audit ledger records *that* consent was captured — it does not constrain where the audio was processed.
+
+None of this is a defect. It is the default data path, and for many deployments it is fine. But a template that ships EU AI Act and SB 243 controls invites use with EU callers, so the path is documented here rather than left to be discovered. Whether it satisfies your obligations is a question for you and your counsel, not for this README.
+
 ### Model swap-ins
 
 The agent model is `anthropic/claude-haiku-4-5` — a **non-reasoning** model on purpose: time-to-first-token is what the caller hears, and a reasoning model spends seconds "thinking" every turn. Haiku is also the default because it's the one provider that routes cleanly through AIMock, keeping the CI eval green. Non-reasoning swap-ins: `google/gemma-4-31b-it` (LiveKit's voice-tuned default) or `openai/gpt-4.1-mini`. Edit `model` in `src/mastra/agents/_example.ts`.
