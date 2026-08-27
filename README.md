@@ -86,9 +86,12 @@ LiveKit handles SIP telephony, and the hang-up path already uses `ctx.deleteRoom
 Buy a number from a SIP provider (Twilio, Telnyx, Plivo, Wavix), point its trunk at your LiveKit SIP endpoint, then create the inbound trunk and dispatch rule with the [LiveKit CLI](https://docs.livekit.io/home/cli/cli-setup/):
 
 ```bash
-# 1. Find your SIP endpoint. It is your project's URL subdomain with `.sip`
-#    inserted:  wss://<subdomain>.livekit.cloud → <subdomain>.sip.livekit.cloud
-#    Most providers want it WITHOUT a `sip:` prefix and with port 5060.
+# 1. Find your SIP endpoint. Take ProjectId and strip the `p_` prefix:
+#      p_<id> → <id>.sip.livekit.cloud   (port 5060, usually no `sip:` prefix)
+#    This is the ProjectId, NOT the URL subdomain — they are different strings,
+#    and `*.sip.livekit.cloud` is wildcarded so a wrong host still resolves.
+#    If ProjectId comes back empty (projects added via `lk project add` rather
+#    than `lk cloud auth`), read it from the LiveKit Cloud dashboard.
 lk project list --json
 
 # 2. Inbound trunk — one per phone number, reused for every call

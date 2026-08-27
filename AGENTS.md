@@ -178,17 +178,21 @@ Inbound phone calls reach the SAME worker as browser calls — no code change. W
 **Setup order.** Each step depends on the one before it:
 
 1. **Provider** — buy a number, create a SIP trunk, point it at the LiveKit SIP endpoint.
-2. **SIP endpoint** — take the project's URL subdomain and insert `.sip`:
-   `wss://<subdomain>.livekit.cloud` → `<subdomain>.sip.livekit.cloud`, port 5060.
-   Most providers want it WITHOUT a `sip:` prefix.
+2. **SIP endpoint** — `lk project list --json`, take `ProjectId` (`p_<id>`), strip
+   `p_`, giving `sip:<id>.sip.livekit.cloud`, port 5060. The endpoint most
+   providers want is that URI WITHOUT the `sip:` prefix.
 
-   Do NOT derive it from `ProjectId`. `lk project list --json` returns an empty
-   `ProjectId` for any project added by hand rather than through `lk cloud auth`,
-   and `lk cloud auth` does not always backfill it — so a `p_<id>`-based recipe
-   is unfollowable on exactly the projects that need it most. The subdomain is
-   always present in the URL you already have. DNS is wildcarded on
-   `*.sip.livekit.cloud`, so a name resolving proves nothing; take it from the
-   URL, not from a lookup.
+   **It is the ProjectId, NOT the URL subdomain.** Those differ: a project on
+   `wss://my-thing-ab12cd34.livekit.cloud` with ProjectId `p_xyz789` has SIP host
+   `xyz789.sip.livekit.cloud`, not `my-thing-ab12cd34.sip.livekit.cloud`. Getting
+   this wrong is invisible until a call is placed, and DNS cannot catch it —
+   `*.sip.livekit.cloud` is wildcarded, so the wrong host resolves happily.
+
+   `lk project list --json` returns an EMPTY `ProjectId` for a project added by
+   hand with `lk project add` rather than through `lk cloud auth`, and re-running
+   `lk cloud auth` does not reliably backfill it. When it is empty, read the
+   ProjectId off the project's settings page in the LiveKit Cloud dashboard.
+   Do not substitute the URL subdomain — it is a different string.
 3. **Inbound trunk** — `lk sip inbound create inbound-trunk.json`. One per phone number, reused for every call. Do NOT create one per call: trunks are cached long-lived objects and per-call creation degrades reliability at scale.
 4. **Dispatch rule** — `lk sip dispatch create dispatch-rule.json`, with `roomConfig.agents[].agentName`. Without `roomConfig` the caller lands in a room no agent ever joins.
 5. **Verify** — `lk sip inbound list` and `lk sip dispatch list` before placing a call.
