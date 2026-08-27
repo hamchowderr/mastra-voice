@@ -178,7 +178,7 @@ Inbound phone calls reach the SAME worker as browser calls — no code change. W
 **Setup order.** Each step depends on the one before it:
 
 1. **Provider** — buy a number, create a SIP trunk, point it at the LiveKit SIP endpoint.
-2. **SIP endpoint** — `lk project list --json`, take `ProjectId` (`p_vjnxecm0tjk`), strip `p_`, giving `sip:vjnxecm0tjk.sip.livekit.cloud`. The endpoint some providers want is that URI WITHOUT the `sip:` prefix.
+2. **SIP endpoint** — `lk project list --json`, take `ProjectId` (`p_<id>`), strip `p_`, giving `sip:<id>.sip.livekit.cloud`. The endpoint some providers want is that URI WITHOUT the `sip:` prefix.
 3. **Inbound trunk** — `lk sip inbound create inbound-trunk.json`. One per phone number, reused for every call. Do NOT create one per call: trunks are cached long-lived objects and per-call creation degrades reliability at scale.
 4. **Dispatch rule** — `lk sip dispatch create dispatch-rule.json`, with `roomConfig.agents[].agentName`. Without `roomConfig` the caller lands in a room no agent ever joins.
 5. **Verify** — `lk sip inbound list` and `lk sip dispatch list` before placing a call.
