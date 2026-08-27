@@ -56,7 +56,15 @@ RUN node scripts/bake-studio.mjs
 # the standalone CLI only downloads for plugins it can register, so if it fetches
 # nothing the worker pulls the model once on first cold start (then it's cached).
 ENV HF_HOME=/app/.cache/huggingface
-RUN mkdir -p "$HF_HOME" && (npx livekit-agents download-files || echo "download-files: nothing baked — worker will fetch on first cold start")
+# HOME is overridden for this step on purpose. The turn-detector downloader
+# ignores HF_HOME and writes to $HOME/.cache/huggingface. With the default
+# HOME=/root the model lands in /root, which is never copied into the runtime
+# stage, so the image registers a worker that cannot serve a call. HOME=/app
+# makes that path resolve to exactly HF_HOME (/app/.cache/huggingface), which IS
+# copied — do not set it to /app/.cache or the path doubles to .cache/.cache.
+RUN mkdir -p "$HF_HOME" && \
+    (HOME=/app npx livekit-agents download-files || \
+     echo "download-files: nothing baked — worker will fetch on first cold start")
 
 # Drop devDependencies (mastra CLI, typescript, types) AFTER the build: the runtime
 # server runs the built bundle and the worker runs from source via tsx (a PRODUCTION
@@ -71,9 +79,16 @@ WORKDIR /app
 # node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (onnxruntime, sharp)
 RUN apt-get update && apt-get install -y --no-install-recommends tini wget && rm -rf /var/lib/apt/lists/*
 
+# `-m` (create the home directory), NOT `-M`. @livekit/agents' download-files
+# writes the turn-detector model under $HOME and ignores HF_HOME for that step,
+# so a user with no home directory fails with
+# `EACCES: permission denied, mkdir '/home/mastra'`. The worker still REGISTERS
+# without the model — it only fails when a job process starts, exiting 0 with
+# `process exited before initializing`, so calls connect to silence and nothing
+# in the logs names the cause.
 RUN groupadd -g 1001 nodejs && \
-    useradd -u 1001 -g nodejs -s /bin/sh -M mastra && \
-    chown -R mastra:nodejs /app
+    useradd -u 1001 -g nodejs -s /bin/sh -m -d /home/mastra mastra && \
+    chown -R mastra:nodejs /app /home/mastra
 
 ENV NODE_ENV=production
 ENV PORT=4111
@@ -82,6 +97,10 @@ ENV PORT=4111
 ENV MASTRA_STUDIO_PATH=/app/.mastra/output/studio
 # Where the baked turn-detector model lives (must match the build stage).
 ENV HF_HOME=/app/.cache/huggingface
+# Must match the HOME used for the bake above: the downloader resolves
+# $HOME/.cache/huggingface, so HOME=/app lands on HF_HOME. A cold-start refetch
+# needs this writable too.
+ENV HOME=/app
 
 # Server bundle — the self-contained Mastra HTTP service (default CMD).
 COPY --from=build --chown=mastra:nodejs /app/.mastra/output ./.mastra/output
