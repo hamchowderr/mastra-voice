@@ -205,6 +205,8 @@ Each agent appears as `ask_<agentId>`.
 
 `http://localhost:4111` — interactive chat, trace inspection, a metrics dashboard, and the **Agent Editor**, where non-developers tune instructions and tools with a draft/publish workflow. Code-defined agents keep `id`, `name`, and `model` read-only; everything else is editable.
 
+**Studio is text-only. It does not stream audio.** Chatting with `voiceAssistant` here exercises the agent's instructions, tools, and memory — the same path evals use — but never the voice pipeline. VAD, turn detection, barge-in, STT, and TTS all live in the worker process, so a reply that reads perfectly in Studio can still sound wrong on a call. Judge how it *sounds* with the worker and a real call or a simulation.
+
 Secure Studio behind auth before exposing it — see [Mastra's auth docs](https://mastra.ai/docs/server/auth/overview).
 
 ---

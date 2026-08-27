@@ -61,7 +61,7 @@
  */
 
 import type { InputProcessorOrWorkflow, OutputProcessorOrWorkflow } from '@mastra/core/processors';
-import { UnicodeNormalizer } from '@mastra/core/processors';
+import { TokenLimiter, UnicodeNormalizer } from '@mastra/core/processors';
 
 // import {
 //   ModerationProcessor,
@@ -72,7 +72,6 @@ import { UnicodeNormalizer } from '@mastra/core/processors';
 //   ToolCallFilter,
 //   StructuredOutputProcessor,
 //   BatchPartsProcessor,
-//   TokenLimiter,
 //   CostGuardProcessor,
 // } from '@mastra/core/processors';
 
@@ -105,16 +104,20 @@ export const defaultOutputProcessors: OutputProcessorOrWorkflow[] = [
   // Only put processors here that implement an OUTPUT phase hook
   // (processOutputResult / processOutputStream / processOutputStep).
 
-  // --- OPT-IN: deterministic output cap (no LLM), core >=1.56 only ---
-  // Bounds the RESPONSE, so it caps both token spend and how long the agent can
-  // talk — the second matters more on a call than on a page. Counts only
-  // generated output parts; tool and lifecycle chunks pass through. Emits
-  // `data-token-limit-reached` when it truncates.
+  // Deterministic runaway cap on the RESPONSE. No LLM, no added latency. Bounds
+  // both token spend and how long the agent can talk — the second matters more
+  // on a call than on a page, because the caller has to sit through it. Counts
+  // only generated output parts; tool and lifecycle chunks pass through
+  // untouched, and it emits `data-token-limit-reached` if it ever truncates.
   //
-  // Before enabling on the voice path, confirm it on a STREAMING run with a tool
-  // call, not just `generate()` — this template streams replies, and truncation
-  // mid-tool-call is the failure mode to watch for. See voice-9jm.27.1.
-  // new TokenLimiter({ limit: 2000, strategy: 'truncate' }),
+  // 2000 tokens is far above any correct voice reply (the agent is instructed to
+  // be terse), so this should never fire in normal operation — it exists to stop
+  // a degenerate loop, not to shape answers.
+  //
+  // Requires core >=1.56 for the output hooks. Verified behaviourally on 1.63 via
+  // scripts/probe-tokenlimiter.ts: identical text, steps and tool calls with and
+  // without it, on both generate() and stream(). See voice-9jm.27.1.
+  new TokenLimiter({ limit: 2000, strategy: 'truncate' }),
 
   // --- OPT-IN: model-backed / behavior-changing output processors ---
   // Stop system-prompt / instruction leakage in responses (one extra LLM call):
