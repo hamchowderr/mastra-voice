@@ -331,6 +331,22 @@ The worker ships a regulated-voice surface most tutorials skip — configured in
 - **Agent-initiated hang-up** — the agent says goodbye then calls `endCall`; the worker waits for the closing words, plays a guaranteed sign-off, and disconnects. A `stopWhen` guard structurally stops the loop so the model can't speak past its goodbye.
 - **Versioned audit ledger** — disclosure + consent + hang-up records are committed to **Dolt** as one attributed, diffable commit per call (`src/mastra/lib/compliance-ledger.ts`), off the caller's clock. Dormant until `DOLT_*` is set + the compose `dolt` service runs.
 
+### Where call data goes
+
+Three external legs per call. None of the audio stays on your host.
+
+| Leg | Endpoint | Carries |
+|---|---|---|
+| Transport | `LIVEKIT_URL` | Live audio stream |
+| STT + TTS | `agent-gateway.livekit.cloud` (US) | Raw caller audio; synthesized reply |
+| LLM | Anthropic | Transcript + memory context |
+
+`stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit **Inference** model strings. They resolve to `DEFAULT_INFERENCE_URL` in `@livekit/agents` — a hardcoded US gateway — authenticated with `LIVEKIT_API_KEY`. This is what removes the need for separate Deepgram and Cartesia accounts.
+
+Self-hosting the LiveKit server does not move STT/TTS: the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, either set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
+
+The Dolt ledger records that consent was captured. It does not constrain where audio was processed.
+
 ### Model swap-ins
 
 The agent model is `anthropic/claude-haiku-4-5` — a **non-reasoning** model on purpose: time-to-first-token is what the caller hears, and a reasoning model spends seconds "thinking" every turn. Haiku is also the default because it's the one provider that routes cleanly through AIMock, keeping the CI eval green. Non-reasoning swap-ins: `google/gemma-4-31b-it` (LiveKit's voice-tuned default) or `openai/gpt-4.1-mini`. Edit `model` in `src/mastra/agents/_example.ts`.
