@@ -10,10 +10,12 @@ mastra.duckdb*
 *.db-*
 .netlify
 .vercel
-# Claude Code: the skills in .claude/skills/ are vendored and shared with every
-# clone; personal settings (settings.local.json) and machine state are not.
+# Claude Code: the skills in .claude/skills/ and the path-scoped rules in
+# .claude/rules/ are vendored and shared with every clone; personal settings
+# (settings.local.json) and machine state are not.
 .claude/*
 !.claude/skills/
+!.claude/rules/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
