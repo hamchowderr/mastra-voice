@@ -1,67 +1,116 @@
-# template-mastra-voice
+<div align="center">
 
-A production-ready Mastra voice agent starter. Real-time speech-to-speech via **LiveKit**, first-class **compliance controls** (AI disclosure, consent, agent hang-up), a full eval pipeline, Docker, and CI — everything you need to ship a regulated voice agent without building the scaffold yourself.
+# 📞 Mastra Voice
 
-> **v0.2.0 — breaking change.** The realtime transport moved from Gemini Live to LiveKit (`@mastra/livekit`). Gemini Live's in-process STS is gone; LiveKit now owns the audio loop (VAD, streaming STT, semantic turn detection, barge-in, TTS) while Mastra owns replies, tools, and memory. A voice deployment is now **two processes** — the Mastra HTTP server and a separate LiveKit worker. Upgrading from v0.1.x is not drop-in: re-read the Quickstart and Deployment sections.
+### Answer the phone with an AI agent — disclosure, consent, and audit built in.
 
-**Scaffold this template:**
+**A production-ready [Mastra](https://mastra.ai) voice agent you can clone and deploy.** Real-time speech-to-speech over [LiveKit](https://livekit.io), with the compliance surface regulated calls actually need — an AI-disclosure greeting, runtime consent capture, agent-initiated hang-up, and a versioned audit ledger — plus evals, Docker, and CI.
 
-```bash
-npx degit hamchowderr/template-mastra-voice my-agent && cd my-agent
-```
+[![License: ISC](https://img.shields.io/badge/license-ISC-blue)](#-license)
+[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-orange)](https://github.com/hamchowderr/mastra-voice/releases/tag/v0.2.0)
+[![Node: 22.13+](https://img.shields.io/badge/node-22.13%2B-339933?logo=node.js&logoColor=white)](#-getting-started)
+[![Built on Mastra](https://img.shields.io/badge/built%20on-Mastra-000)](https://mastra.ai)
+[![Realtime by LiveKit](https://img.shields.io/badge/realtime-LiveKit-1f8cf9)](https://livekit.io)
+
+</div>
 
 ---
 
-## Quickstart (5 minutes)
+> **v0.2.0 is a breaking change.** The realtime transport moved from Gemini Live to LiveKit. Gemini Live's in-process STS is gone; LiveKit now owns the audio loop while Mastra owns replies, tools, and memory. **A deployment is now two processes** — the Mastra server and a separate LiveKit worker. Upgrading from v0.1.x is not drop-in.
 
-**Prerequisites**: Node 22.13+, Docker Desktop, a Supabase project, an Anthropic API key, and LiveKit credentials ([LiveKit Cloud](https://cloud.livekit.io) or self-hosted).
+## ⚡ What it does
+
+Someone calls. The agent answers, tells them it's an AI, asks for the consent the call needs, has the conversation, then says goodbye and hangs up itself — and every one of those compliance moments lands in a versioned ledger you can diff later.
+
+The parts most voice tutorials leave out are the parts this ships:
+
+- **AI disclosure** — a non-interruptible greeting at first contact (EU AI Act Art. 50), re-disclosed periodically on long calls (California SB 243). Spoken via TTS with no LLM round-trip.
+- **Consent — declare → capture → enforce** — the worker declares what a call needs, the agent's `recordConsent` tool captures the caller's answer, and enforcement is **deny-by-default** at end of call.
+- **Agent-initiated hang-up** — the agent says goodbye, then a `stopWhen` guard structurally stops the loop so the model can't talk past its own sign-off.
+- **Versioned audit ledger** — disclosure, consent, and hang-up records commit to [Dolt](https://www.dolthub.com/) as one attributed, diffable commit per call.
+
+Underneath: LiveKit handles VAD, streaming STT, semantic turn detection, barge-in, and TTS. Mastra handles replies, tools, and memory tuned so nothing writes on the audio path.
+
+---
+
+## 🚀 Getting started
+
+**Prerequisites**
+
+- **Node.js 22.13+** — `node --version`
+- **Docker Desktop** (or any Docker daemon) — `npx supabase start` boots Postgres + pgvector inside it
+- **A Supabase project** — local is fine
+- **An Anthropic API key** — the agent's model
+- **LiveKit credentials** — [LiveKit Cloud](https://cloud.livekit.io) or self-hosted
+
+Four commands from a clean checkout to a working agent:
 
 ```bash
 # 1. Clone and install
-git clone <repo> my-agent && cd my-agent
-npm install
+git clone https://github.com/hamchowderr/mastra-voice.git my-agent
+cd my-agent && npm install
 
-# 2. Configure environment
+# 2. Configure environment — every variable is documented inline
 cp .env.example .env
-# Fill in: APP_SECRET, SUPABASE_*, ANTHROPIC_API_KEY
+#    Required: APP_SECRET, SUPABASE_*, ANTHROPIC_API_KEY, LIVEKIT_*
 
-# 3. Start local Supabase (first time only)
+# 3. Boot local Supabase (first time only)
 npx supabase start
 
-# 4. Run Studio (text mode — no mic required)
+# 4. Start the server + Studio on :4111
 npm run dev
-# → Mastra Studio at http://localhost:4111
 ```
 
-Chat with the `voiceAssistant` agent in Studio to verify the text pipeline works. Send:
+Open `http://localhost:4111`, chat with the `voiceAssistant` agent, and send *"What time is it?"* — it should call `getCurrentTime` and answer. That proves the text pipeline end to end.
 
-> What time is it?
+### 🎙️ Then actually talk to it
 
-Expected: agent calls `getCurrentTime` and returns the current time.
-
-### Talk to it (the LiveKit worker)
-
-Real audio runs in a **second process** — the LiveKit worker — alongside the server:
+Audio runs in a **second process**. Start it in another terminal:
 
 ```bash
 # One-time: fetch the turn-detector model (Silero VAD already ships in node_modules)
 npm run worker:download-files
 
-# Start the worker (hot-reload dev). Requires LIVEKIT_URL/API_KEY/API_SECRET in .env.
+# Start the worker — needs LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET
 npm run worker:dev
 ```
 
-Then place a call from the hosted [LiveKit Agents Playground](https://agents-playground.livekit.io) (no frontend needed) — it dispatches to the same `agentName` the worker registers. AIMock and the eval gate cover only the **text** path; real audio is a **manual** checkpoint (see [Realtime voice](#realtime-voice)).
+Then place a call from the hosted [LiveKit Agents Playground](https://agents-playground.livekit.io) — no frontend needed. It dispatches to the same `agentName` the worker registers under.
+
+> **Studio is text-only.** It does not stream audio, so it cannot exercise turn detection, barge-in, or TTS. Voice is verified through the playground or a real phone call — never in Studio.
+
+### ☎️ Give it a phone number
+
+LiveKit does SIP telephony, and this template is built for it: the hang-up path uses `ctx.deleteRoom()` specifically because it terminates a SIP caller correctly rather than leaving a dangling leg.
+
+Configure a SIP trunk and dispatch rule in your LiveKit project, point it at the same `agentName`, and calls to that number reach the same worker with no code change. Everything in **What it does** — disclosure, consent, hang-up, the ledger — applies identically to a phone call.
+
+### 🔐 Secrets with Infisical
+
+`.env` works fine. If you'd rather not have secrets on disk, this project runs cleanly under [Infisical](https://infisical.com) — inject at runtime instead:
+
+```bash
+# Server + Studio
+infisical run --path=/mastra-voice --silent -- npm run dev
+
+# Worker (second terminal) — same secrets, same path
+infisical run --path=/mastra-voice --silent -- npm run worker:start
+
+# Evals
+infisical run --path=/mastra-voice --silent -- npm run eval
+```
+
+Nothing in the app reads Infisical directly — it only ever sees environment variables, so `.env` and `infisical run` are interchangeable. Don't use `--recursive`; scope each project to its own path.
 
 ---
 
-## Reachability
+## 🔌 Reachability
 
-This template's agents are reachable through four standard protocols. Once the dev server is running (`npm run dev`), every registered agent can be called via:
+Four standard protocols, all live once `npm run dev` is up.
 
-### REST API
+### REST
 
-Direct HTTP calls — text mode only. The voice agent supports text input for integration testing and evals.
+Text mode. Useful for integration tests and evals.
 
 ```bash
 curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
@@ -69,11 +118,9 @@ curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
   -d '{"messages":[{"role":"user","content":"What time is it?"}]}'
 ```
 
-For streaming responses, use `/stream` instead of `/generate`. Full OpenAPI spec at `/api/openapi.json`. Interactive docs at `/swagger-ui` (dev only).
+Use `/stream` for streaming. OpenAPI spec at `/api/openapi.json`; interactive docs at `/swagger-ui` (dev only).
 
-#### Working memory (persist context per user)
-
-The `voiceAssistant` has **memory** tuned for voice latency (resource-scoped — see `src/mastra/lib/memory.ts`): working memory is **read-only to the agent** (`agentManaged: false`, so it never writes on the audio path), semantic recall is kept **small** (topK 3), and observational memory is sized to distill off-call. It applies to the **text** path below; pass `memory.resource` (a stable user ID) and `memory.thread` (the conversation ID) to persist across conversations:
+Pass `memory.resource` (a stable user ID) and `memory.thread` (the conversation ID) to persist context across conversations:
 
 ```bash
 curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
@@ -84,252 +131,58 @@ curl -X POST http://localhost:4111/api/agents/voiceAssistant/generate \
   }'
 ```
 
-**Note:** these memory processors apply to the text `/generate` path. Semantic recall is on but deliberately small, and working-memory writes are kept off the loop — both to protect voice latency (see `src/mastra/lib/memory.ts`).
+### A2A
 
-### A2A (Agent-to-Agent Protocol)
-
-Google's open standard for agent-to-agent communication. JSON-RPC over HTTP.
+Google's agent-to-agent standard, JSON-RPC over HTTP. Use it when an agent in CrewAI, LangGraph, ADK, or anything A2A-compatible needs to delegate here.
 
 ```bash
-# Get agent card
 curl http://localhost:4111/api/.well-known/voiceAssistant/agent-card.json
-
-# Send a message (JSON-RPC)
-curl -X POST http://localhost:4111/api/a2a/voiceAssistant \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"message/send","params":{"message":{"kind":"message","messageId":"msg-1","role":"user","parts":[{"kind":"text","text":"What time is it?"}]}}}'
 ```
 
-Use this when another agent (in CrewAI, LangGraph, ADK, or any A2A-compatible framework) needs to delegate work to this template's agent.
+### MCP
 
-### MCP (Model Context Protocol)
-
-Anthropic's open standard for agent-tool integration. The template's MCPServer exposes every agent as a callable tool at `/api/mcp/voice-mcp/mcp`.
-
-To use from Claude Desktop, add to your `claude_desktop_config.json`:
+Every agent is exposed as a callable tool at `/api/mcp/voice-mcp/mcp`. From Claude Desktop:
 
 ```json
 {
   "mcpServers": {
-    "template-mastra-voice": {
+    "mastra-voice": {
       "url": "http://localhost:4111/api/mcp/voice-mcp/mcp"
     }
   }
 }
 ```
 
-Each agent appears as a tool named `ask_<agentId>`. Useful during development (call your own agent from your IDE) and for cross-system integration.
+Each agent appears as `ask_<agentId>`.
 
-### Studio (visual UI + Editor)
+### Studio
 
-Open `http://localhost:4111` in a browser. Studio provides:
+`http://localhost:4111` — interactive chat, trace inspection, a metrics dashboard, and the **Agent Editor**, where non-developers tune instructions and tools with a draft/publish workflow. Code-defined agents keep `id`, `name`, and `model` read-only; everything else is editable.
 
-- Interactive chat with each agent (text mode — Studio does not stream audio)
-- Trace inspection for every run
-- Metrics dashboard (cost, latency, errors)
-- **Agent Editor**: Non-developers iterate on agent instructions, prompts, and tools without touching code. Changes are versioned with draft/publish workflow.
-
-The Editor is intended for product teams, prompt engineers, or subject-matter experts to tune behavior between deploys. Code-defined agents have read-only `id`, `name`, and `model` fields; everything else is editable through Studio.
-
-For production deployment, secure Studio behind authentication. See [Mastra's auth docs](https://mastra.ai/docs/server/auth/overview).
+Secure Studio behind auth before exposing it — see [Mastra's auth docs](https://mastra.ai/docs/server/auth/overview).
 
 ---
 
-## File Structure
+## 🧠 How it works
 
 ```
-template-mastra-voice/
-├── src/
-│   ├── lib/
-│   │   └── env.ts                  # Zod-validated env loader — crashes on bad config
-│   └── mastra/
-│       ├── index.ts                # Entry point: env → AIMock → Mastra instance
-│       ├── voice-worker.ts         # LiveKit worker: audio loop + greeting/consent/hang-up
-│       ├── agents/
-│       │   └── _example.ts         # voiceAssistant agent — copy this for new voice agents
-│       ├── lib/
-│       │   ├── aimock.ts           # Routes LLM calls to AIMock when USE_AIMOCK=true
-│       │   ├── memory.ts           # Voice-tuned Memory baseline (read-only WM, small recall)
-│       │   ├── voice.ts            # Shared voice agent id/name constants
-│       │   ├── processors.ts       # Shared input/output processor baseline
-│       │   ├── consent-ledger.ts   # In-process consent store (enforce within a call)
-│       │   ├── compliance-ledger.ts# Durable per-call audit trail → Dolt (versioned)
-│       │   ├── dolt.ts             # Dolt connection + attributed commit()
-│       │   └── supabase.ts         # Supabase client factory
-│       ├── scorers/
-│       │   ├── _example.scorers.ts # answerRelevancy scorer
-│       │   └── datasets/
-│       │       └── _example.json   # Eval dataset — 5 cases with thresholds
-│       └── tools/
-│           ├── time-and-math.ts    # getCurrentTime + evaluateMath example tools
-│           ├── consent.ts          # recordConsent tool (capture caller's decision)
-│           ├── end-call.ts         # endCall tool (agent-initiated hang-up)
-│           └── dolt.ts             # doltQuery/doltWrite/doltHistory (versioned data)
-├── fixtures/                       # AIMock fixtures (voice-assistant.json) for the eval gate
-├── scripts/
-│   └── eval.ts                     # Offline CI eval gate — exits 0/1
-├── prompts/
-│   ├── README.md                   # Index of agent-building prompts
-│   ├── build-agent.md              # Parameterized prompt for adding a text agent
-│   └── build-voice-agent.md        # Parameterized prompt for adding a voice agent
-├── .github/
-│   └── workflows/
-│       └── ci.yml                  # typecheck → build + eval (parallel) → docker
-├── Dockerfile                      # Multi-stage; ONE image runs the server OR the worker
-├── docker-compose.yml              # server + worker + postgres(pgvector) + dolt
-├── .env.example                    # All required env vars with comments
-└── AGENTS.md                       # Conventions for AI coding agents
+Caller (phone via SIP · browser · playground)
+        │
+   LiveKit  ── transport + Inference (STT, TTS)
+        │
+   LiveKit worker          owns: VAD, streaming STT, turn detection,
+   node --import tsx             barge-in, TTS
+        │
+   MastraVoiceAgent        owns: replies, tools, memory
+        │
+   Mastra server (REST · A2A · MCP · Studio) → Postgres + Dolt
 ```
 
----
+**Two processes, one image.** The server and the worker run the same Docker image with different commands. Workers scale by call volume, the server by request volume.
 
-## Scripts
+**The worker takes no inbound traffic.** Calls arrive at LiveKit; the worker dials *out* to register. No port, no public domain.
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start Mastra Studio at localhost:4111 (text mode) |
-| `npm run build` | Bundle the server for production (output → `.mastra/output/`) |
-| `npm run start` | Start production server (no Studio) |
-| `npm run worker:dev` | Start the LiveKit worker with hot reload (dev only) |
-| `npm run worker:start` | Start the LiveKit worker in production mode |
-| `npm run worker:download-files` | Fetch the turn-detector model (one-time; bake into the image) |
-| `npm run eval` | Run offline eval gate against all cases in the dataset |
-| `npm run typecheck` | TypeScript type check (zero-emit) |
-| `npm run score:list` | List registered scorers |
-
-> The worker (`worker:*`) is a **separate process** from the server. `worker:dev` is hot-reload only — never ship it; use `worker:start` in production.
-
----
-
-## Adding a New Voice Agent
-
-1. Copy `src/mastra/agents/_example.ts` → `src/mastra/agents/my-agent.ts`
-2. Rename the agent, update `id`, `instructions`, `model`, tools, and voice config
-3. Register it in `src/mastra/index.ts` under `agents:`
-4. Add eval cases to a new dataset file in `src/mastra/scorers/datasets/`
-5. Use `prompts/build-voice-agent.md` with Claude Code to generate a complete voice agent from a description
-
----
-
-## Running Evals
-
-Evals run in text mode — no mic or audio required.
-
-```bash
-# Against the live provider API
-npm run eval
-
-# Against AIMock (deterministic, no API cost)
-npx @copilotkit/aimock --config aimock.json &
-USE_AIMOCK=true npm run eval
-
-# Custom dataset
-node --env-file=.env --import tsx/esm scripts/eval.ts path/to/dataset.json
-```
-
-### CI eval coverage
-
-The CI eval gate runs against AIMock (deterministic, no API cost) and asserts on the **text** path only — AIMock can't intercept the realtime WebRTC/WebSocket audio stream. All 5 cases have fixtures in `fixtures/voice-assistant.json`, so CI validates the full tool-calling matrix.
-
-What CI validates (4 jobs):
-- **Typecheck** — full
-- **Build** — full (`mastra build`)
-- **AIMock eval** — all 5 cases (tool-calling, no-tool, graceful goodbye) against a bare `postgres:16` service
-- **Docker** — the image builds
-
-Voice quality — disclosure playout, turn detection, barge-in, tool filler, consent capture, agent hang-up — can NOT be validated by AIMock. It's a **manual** checkpoint with real audio (see [Realtime voice](#realtime-voice)).
-
-To run the eval against the live provider (real API cost) instead of AIMock:
-
-```bash
-npm run eval
-```
-
----
-
-## Docker
-
-**One image, two services.** The same image runs either the Mastra **server** (HTTP + Studio, the default command) or the LiveKit **worker** (outbound audio loop, `node --import tsx src/mastra/voice-worker.ts start`). `docker-compose.yml` runs both plus Postgres (pgvector) and Dolt.
-
-```bash
-# Build the shared image once
-docker compose build
-
-# Run the full stack (server + worker + postgres + dolt)
-docker compose up -d
-
-# Health check (server only — the worker has no HTTP port)
-curl http://localhost:4111/health
-```
-
-The worker connects **outbound** to LiveKit — no inbound ports, no public domain. Keep **at least one worker always on**: with zero workers a call connects to silence, and scaling to zero deregisters it from LiveKit. Only one worker flavor runs at a time (they all register under the same `agentName`).
-
-Managed single-process HTTP hosts (Mastra Cloud, Railway, Cloud Run) can host the **server** but not the worker — run the worker where a long-lived outbound process is allowed. This template targets Coolify on a VPS, which runs Docker Compose directly. Both processes write to the same Postgres/Dolt concurrently, which those stores support (a single-writer store would not).
-
----
-
-## Deployment Notes
-
-### Docker image size
-
-The image is large — `node:22-slim` (Debian, glibc) is required because `node:22-alpine` (musl) breaks the native modules: `onnxruntime-node` (fastembed embeddings, plus LiveKit's Silero VAD and turn-detector), `sharp`, and the native tokenizers all ship glibc-linked prebuilds with no musl build.
-
-It also carries the **worker runtime** (production `node_modules` + `src` + `tsx`), because the worker runs from source — bundling it would drag in LiveKit's native deps. The server bundle alone is ~676MB; the shared two-service image is larger. Alpine is not a shortcut: the ONNX models the worker needs are the reason the image is big, and the same reason musl is off the table.
-
-### Hardware & scaling
-
-The worker needs **no GPU**. STT (`deepgram/nova-3`), TTS (`cartesia/sonic-3`), and the LLM all run remotely (LiveKit Cloud inference + your model provider). On-box it runs only small ONNX models — Silero VAD, turn detection, and the 384-dim embeddings for semantic recall — plus the JS agent loop and Postgres I/O.
-
-Its cost is **RAM-dominated**: each concurrent call spins a job runner that re-imports the full Mastra app (~2GB), the base worker is ~1GB, and each prewarmed idle runner (`numIdleProcesses`) holds ~2GB.
-
-- **Local dev:** 32GB is comfortable; 16GB is the practical floor, and only if little else runs — one call is ~5GB (base + prewarm + active runner) on top of Docker, a browser, and your editor. Set `numIdleProcesses: 0` to drop the idle spare, and run the call client on a second device (phone or laptop) so the browser's WebRTC encoding doesn't compete with the worker for CPU. An NVMe SSD helps model load.
-- **Production:** budget ~1.5–2GB RAM and ~1–2 vCPU per concurrent call — a 4 vCPU / 8–16GB instance handles several. Scale **horizontally**: LiveKit dispatches across every registered worker, so add worker replicas for volume rather than enlarging one box, and keep the worker region-close to your LiveKit project to minimize round-trip to the cloud STT/TTS. The compose `worker` service reserves 2GB / limits 4GB.
-
-## Common Gotchas
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `Invalid environment variables` on boot | Missing or malformed `.env` | Check each var listed in the error against `.env.example` |
-| `ECONNREFUSED 127.0.0.1:54322` | Local Supabase not running | `npx supabase start` |
-| Docker container crashes (SIGSEGV) | Native modules (onnxruntime, sharp) need glibc | Use `node:22-slim`, not `node:22-alpine` |
-| `ECONNREFUSED` inside Docker | `127.0.0.1`/`localhost` in a DB URL | In compose, use the service names (`postgres`, `dolt`) — already wired in `docker-compose.yml` |
-| Call connects to silence | No worker running (or scaled to zero) | Keep ≥1 `worker` service up; check it registered under the right `agentName` |
-| `runner initialization timed out` | Worker subprocess re-imports ~2GB (fastembed/onnx) | Already raised via `initializeProcessTimeout` in `voice-worker.ts`; if it persists, the host is RAM-starved (see below) |
-| Responses lag; log shows `inference is slower than realtime` (delay climbing) | Host RAM/CPU starved — unrelated Docker stacks running, or the call's browser sharing the box | Free RAM (`docker ps`, then `supabase stop --project-id <id>` on strays), set `numIdleProcesses: 0`, run the call client off-box |
-| Agent not listed in Studio | Not registered in `mastra.agents` | Add to `src/mastra/index.ts` |
-| PostHog telemetry noise | Mastra runtime phones home on startup | Set `MASTRA_TELEMETRY_DISABLED=1` in `.env` |
-
----
-
-## Environment Variables
-
-See `.env.example` for the full list with comments. Minimum required:
-
-- `APP_SECRET` — min 32 chars, generate with `openssl rand -hex 32`
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
-- At least one of: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`
-- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` — the realtime voice transport; all three required
-
----
-
-## Realtime voice
-
-Real audio runs through **LiveKit** (`@mastra/livekit`), not the server. Two processes:
-
-- **Server** (`npm run dev` / `start`) — the Mastra HTTP API + Studio. Text path, evals, REST/A2A/MCP.
-- **Worker** (`npm run worker:start`) — a standalone process that connects to LiveKit. LiveKit owns the audio loop (VAD, streaming STT, semantic turn detection, barge-in, TTS); Mastra owns replies, tools, and memory. They talk over the LiveKit room. The worker is **not** bundled by `mastra build` — it runs from source via `tsx`.
-
-STT/TTS route through **LiveKit Cloud inference** (`deepgram/nova-3`, `cartesia/sonic-3`) using just your `LIVEKIT_*` credentials — no separate Deepgram/Cartesia accounts. LiveKit Inference serves STT and TTS, **not** the LLM: the reply still comes from the Mastra agent's model.
-
-### Compliance controls (the headline feature)
-
-The worker ships a regulated-voice surface most tutorials skip — configured in `src/mastra/voice-worker.ts`:
-
-- **AI disclosure** — a non-interruptible greeting states the caller is speaking with an AI at first contact (EU AI Act Art. 50), with periodic re-disclosure on long calls (California SB 243). Spoken via TTS with no LLM round-trip, and persisted to the thread as evidence.
-- **Consent — declare → capture → enforce** — the worker declares required consents (`configuration.consentPolicy`); the agent's `recordConsent` tool captures the caller's yes/no; enforcement is deny-by-default at `onCallEnd` (e.g. no call summary is stored unless consent was granted).
-- **Agent-initiated hang-up** — the agent says goodbye then calls `endCall`; the worker waits for the closing words, plays a guaranteed sign-off, and disconnects. A `stopWhen` guard structurally stops the loop so the model can't speak past its goodbye.
-- **Versioned audit ledger** — disclosure + consent + hang-up records are committed to **Dolt** as one attributed, diffable commit per call (`src/mastra/lib/compliance-ledger.ts`), off the caller's clock. Dormant until `DOLT_*` is set + the compose `dolt` service runs.
+**Never scale the worker to zero.** With no worker registered, a call connects to silence. Keep at least one running, and note that only one worker flavor can run at a time — they all register under the same `agentName`.
 
 ### Where call data goes
 
@@ -341,24 +194,114 @@ Three external legs per call. None of the audio stays on your host.
 | STT + TTS | `agent-gateway.livekit.cloud` (US) | Raw caller audio; synthesized reply |
 | LLM | Anthropic | Transcript + memory context |
 
-`stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit **Inference** model strings. They resolve to `DEFAULT_INFERENCE_URL` in `@livekit/agents` — a hardcoded US gateway — authenticated with `LIVEKIT_API_KEY`. This is what removes the need for separate Deepgram and Cartesia accounts.
+`stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit **Inference** model strings, resolving to a hardcoded US gateway authenticated with `LIVEKIT_API_KEY`. This is what removes the need for separate Deepgram and Cartesia accounts.
 
-Self-hosting the LiveKit server does not move STT/TTS: the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, either set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
+Self-hosting the LiveKit server does not move STT/TTS — the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
 
 The Dolt ledger records that consent was captured. It does not constrain where audio was processed.
 
-### Model swap-ins
+---
 
-The agent model is `anthropic/claude-haiku-4-5` — a **non-reasoning** model on purpose: time-to-first-token is what the caller hears, and a reasoning model spends seconds "thinking" every turn. Haiku is also the default because it's the one provider that routes cleanly through AIMock, keeping the CI eval green. Non-reasoning swap-ins: `google/gemma-4-31b-it` (LiveKit's voice-tuned default) or `openai/gpt-4.1-mini`. Edit `model` in `src/mastra/agents/_example.ts`.
+## 🧪 Build & test
 
-### Manual verification (required)
+```bash
+npm run typecheck    # tsc --noEmit, covers src/ and scripts/
+npm run eval         # agent eval gate against the example dataset
+npm run build        # mastra build → .mastra/output
+npm run score:list   # list registered scorers
+```
 
-AIMock and the eval gate cover the text path only. Voice quality is a **manual** checkpoint with real hardware — place a call from the hosted [LiveKit Agents Playground](https://agents-playground.livekit.io) and verify: the disclosure plays uninterruptibly, turn detection doesn't cut you off mid-thought, barge-in stops generation, tool filler speaks, consent captures, the agent hang-up signs off cleanly, and the thread transcript matches what you heard.
+Evals run against a real provider by default, or deterministically against [AIMock](https://aimock.copilotkit.dev) with no API spend:
 
-> **Note:** `turnDetection: 'multilingual'` currently uses LiveKit's text-based turn detector, which `@livekit/agents` marks deprecated. The migration to the on-device audio EOT detector is tracked but deferred until it can be verified with real audio (it's a behavior change to the core turn-taking UX, not a drop-in swap).
+```bash
+npx -y -p @copilotkit/aimock aimock -c aimock.json   # terminal 1
+USE_AIMOCK=true npm run eval                         # terminal 2
+```
+
+CI runs four jobs on every PR: **typecheck**, **eval**, **build**, and **docker** — where the image is built *and both containers are started*, so a broken entrypoint fails CI instead of a deploy.
+
+### ✅ The manual checkpoint
+
+**Voice quality cannot be tested automatically, and never will be here.** AIMock's WebSocket support is text-frames-only; LiveKit's own `voice.testing` harness takes a string and skips the audio path entirely. Both mock the *model*, not the microphone.
+
+So before shipping, place a real call and verify:
+
+- The disclosure plays without being interruptible
+- Turn detection doesn't cut you off mid-thought
+- Barge-in stops generation
+- The tool filler speaks while a tool runs
+- Consent captures
+- The agent's hang-up signs off cleanly
+- The thread transcript matches what you actually heard
 
 ---
 
-## For AI Coding Agents
+## 🐳 Docker
 
-See `AGENTS.md` for conventions, boot order, import rules, voice-specific patterns, and things to never do.
+```bash
+docker compose build                      # one image, both services
+docker compose up -d                      # server + worker + postgres + dolt
+curl http://localhost:4111/health         # server only — the worker has no HTTP port
+```
+
+The stack is four containers. Only `mastra` is public; `worker`, `postgres`, and `dolt` are reachable only on the internal network.
+
+| Service | Public | Memory | Role |
+|---|---|---|---|
+| `mastra` | ✅ via Traefik | 1 GB | REST · A2A · MCP · Studio |
+| `worker` | ❌ outbound only | 4 GB limit / 2 GB reserved | The audio loop |
+| `postgres` | ❌ | — | Memory + semantic recall (pgvector) |
+| `dolt` | ❌ | — | Versioned compliance ledger |
+
+`pgdata` and `doltdata` must persist — the Dolt volume holds your entire audit history.
+
+### Image size
+
+`node:22-slim` (Debian, glibc) is required. `node:22-alpine` (musl) breaks `onnxruntime-node`, `sharp`, and the native tokenizers — all ship glibc-linked prebuilds with no musl build.
+
+The image also carries the worker runtime (production `node_modules` + `src` + `tsx`), because the worker runs from source; bundling it would drag in LiveKit's native deps. That means `onnxruntime-node` is present **twice** — once in the server bundle `mastra build` produces, once in the worker's tree.
+
+The build prunes what can't load: `onnxruntime-node` bundles binaries for every platform inside one package, so npm's `optionalDependencies` pruning can't reach them. Removing the macOS and Windows copies saves ~199 MB per tree, ~400 MB total. `linux/arm64` is kept so the same Dockerfile still builds for arm64.
+
+### Hardware & scaling
+
+**No GPU.** STT, TTS, and the LLM all run remotely. On-box it runs only small ONNX models — Silero VAD, turn detection, and 384-dim embeddings for semantic recall — plus the agent loop and Postgres I/O.
+
+Cost is **RAM-dominated**: each concurrent call spins a job runner that re-imports the full Mastra app (~2 GB), the base worker is ~1 GB, and each prewarmed idle runner holds ~2 GB.
+
+- **Local dev** — 32 GB is comfortable, 16 GB is the floor. One call is ~5 GB on top of Docker, a browser, and your editor. Set `numIdleProcesses: 0` and run the call client on a second device so the browser's WebRTC encoding doesn't compete for CPU.
+- **Production** — budget ~1.5–2 GB RAM and 1–2 vCPU per concurrent call; a 4 vCPU / 8–16 GB instance handles several. Scale **horizontally**: LiveKit dispatches across every registered worker. Keep workers region-close to your LiveKit project.
+
+---
+
+## 🧯 Common gotchas
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Invalid environment variables` on boot | Missing or malformed `.env` | Check each var in the error against `.env.example` |
+| `ECONNREFUSED 127.0.0.1:54322` | Local Supabase not running | `npx supabase start` |
+| Container crashes (SIGSEGV) | Native modules need glibc | Use `node:22-slim`, not `node:22-alpine` |
+| `ECONNREFUSED` inside Docker | `127.0.0.1` in a DB URL | Use service names (`postgres`, `dolt`) — already wired in compose |
+| Call connects to silence | No worker running, or scaled to zero | Keep ≥1 `worker` up; check it registered under the right `agentName` |
+| `runner initialization timed out` | Subprocess re-imports ~2 GB | Already raised via `initializeProcessTimeout`; if it persists the host is RAM-starved |
+| Replies lag; log shows `inference is slower than realtime` | Host RAM/CPU starved | Free RAM, set `numIdleProcesses: 0`, run the call client off-box |
+| Agent missing from Studio | Not registered in `mastra.agents` | Add it in `src/mastra/index.ts` |
+
+---
+
+## ⚠️ Known limitations
+
+- **`turnDetection: 'multilingual'`** uses LiveKit's deprecated text-based detector. The audio EOT `TurnDetector` can't be adopted yet: its constructor captures `getJobContext().inferenceExecutor`, and worker options are evaluated at module scope where that throws — leaving the executor `undefined`, which silently disables semantic turn detection rather than erroring. The fix is a job-scoped `turnDetection` factory upstream in `@mastra/livekit`.
+- **`TokenLimiter` is absent from `outputProcessors`.** It was removed when the processor had no output-phase hook. Core 1.56 restored them, so it's re-adoptable pending an A/B probe.
+
+---
+
+## 🤖 For AI coding agents
+
+See [`AGENTS.md`](AGENTS.md) for conventions, boot order, import rules, voice-specific patterns, and things to never do.
+
+---
+
+## 📜 License
+
+ISC
