@@ -10,6 +10,22 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Applies to every job, so every `npm ci` is covered.
+#
+# onnxruntime-node's postinstall downloads the CUDA/GPU build from
+# api.nuget.org. It timed out three separate times on 2026-08-26 (runs
+# 29638482403, 33025073649, 33038290262), each time burning a full CI cycle on
+# an unrelated PR, and each time clearing on a plain re-run — a flake, not a
+# dependency problem.
+#
+# Skipping it costs nothing here: the CPU runtime ships INSIDE the npm package
+# (bin/napi-v6/linux/x64/libonnxruntime.so.1 + onnxruntime_binding.node), and
+# the postinstall only fetches the GPU extras, which an ubuntu-latest runner
+# has no GPU to use. fastembed embeddings and LiveKit's Silero VAD both run on
+# the bundled CPU build — the eval gate and the docker smoke test prove it.
+env:
+  ONNXRUNTIME_NODE_INSTALL: skip
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
