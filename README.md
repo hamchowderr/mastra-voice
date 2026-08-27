@@ -250,12 +250,12 @@ The Dolt ledger records that consent was captured. It does not constrain where a
 
 ## 🧪 Build & test
 
-Testing here comes in three tiers that cover genuinely different things. **Only the third one hears anything.** Everything automated is text — it checks what the agent *says and decides*, never how it sounds or when it speaks.
+Testing here comes in three tiers that cover genuinely different things. The first is text only — it checks what the agent *says and decides*. The second can drive the real audio pipeline. The third is you, on the phone, and nothing replaces it.
 
 | Tier | Exercises | Covers audio? | Runs where |
 | --- | --- | --- | --- |
 | 1. Eval gate | Reply content, tool calls, scorers | No | CI, every PR |
-| 2. Agent simulations | Multi-turn conversation vs. a simulated caller | No | LiveKit Cloud, on demand |
+| 2. Agent simulations | Multi-turn conversation vs. a simulated caller | Yes, in audio mode | LiveKit Cloud, on demand |
 | 3. Real call | Barge-in, turn-taking, disclosure timing | **Yes** | Your ears |
 
 ### 1️⃣ Eval gate — automated, runs in CI
@@ -278,25 +278,40 @@ CI runs four jobs on every PR: **typecheck**, **eval**, **build**, and **docker*
 
 Each case is one fixed input with asserted tool calls and scorer output. That makes it a regression gate: it catches a change breaking something you already knew to check.
 
-### 2️⃣ Agent simulations — multi-turn, still text, not wired up here
+### 2️⃣ Agent simulations — a scripted caller, in text or in audio
 
-LiveKit can play a scripted *caller persona* against the agent over a full conversation and have an LLM judge grade the transcript. Where the eval gate asserts known inputs, this surfaces the failures you didn't think to assert — a caller who withholds a required field, supplies an invalid one, or pushes at a guardrail.
+LiveKit plays a scripted *caller persona* against the agent over a full conversation and has an LLM judge grade the result. Where the eval gate asserts known inputs, this surfaces the failures you didn't think to assert — a caller who withholds a required field, supplies an invalid one, or pushes at a guardrail.
 
 The bundled `livekit-simulations` skill writes the scenario file locally from the agent's own code (nothing is uploaded) and enforces at least one scenario per identified risk.
 
-**Not runnable until the CLI is current.** It is a public beta with no waitlist and nothing to request access to — it needs:
+```bash
+lk agent simulate --scenarios scenarios.yaml src/mastra/voice-worker.ts         # text
+lk agent simulate audio --scenarios scenarios.yaml src/mastra/voice-worker.ts   # full audio pipeline
+```
 
-| Requirement | Needed | Here |
-| --- | --- | --- |
-| LiveKit CLI (Node.js agents) | v2.16.7+ | `winget upgrade LiveKit.LiveKitCLI` |
-| `@livekit/agents` | 1.6.0+ | ^1.7.0 ✅ |
-| LiveKit Cloud project | yes | depends on your `LIVEKIT_URL` |
+**Audio mode drives the real STT→LLM→TTS path** with a simulated voice user, and can degrade the caller's audio on purpose:
 
-Simulations run in **text mode**; audio mode does not exist yet. So this tier widens conversational coverage — it does not shrink tier 3 by one item. See [the LiveKit docs](https://docs.livekit.io/agents/start/testing/simulations/).
+| Flag | Simulates |
+| --- | --- |
+| `--background-noise` | Ambient noise mixed into the caller's audio |
+| `--low-quality-microphone` | A poor microphone |
+| `--packet-loss` | Dropped packets on the caller's track |
 
-### 3️⃣ The real call — the only test that covers voice
+Requirements — a public beta with no waitlist and nothing to request access to:
 
-**Voice quality cannot be tested automatically, and never will be here.** AIMock's WebSocket support is text-frames-only; LiveKit's `voice.testing` harness takes a string and skips the audio path; simulations are text mode too. All three mock the *model*, none of them the microphone.
+| Requirement | Needed |
+| --- | --- |
+| LiveKit CLI | v2.16.7+ for Node.js agents (`winget upgrade LiveKit.LiveKitCLI`) |
+| `@livekit/agents` | 1.6.0+ |
+| LiveKit Cloud project | yes — runs execute on Cloud |
+
+**The worker needs no changes to take part.** A simulation arrives as an ordinary job carrying an `lk.simulator.dispatch` attribute; `ctx.simulationContext()` returns `undefined` on a normal call, so the same worker serves both. The one thing `@mastra/livekit` does not expose is the optional `onSimulationEnd` veto, which would let your own checks fail a run the judge passed — the judge's own verdict still stands without it.
+
+> Note the [LiveKit docs](https://docs.livekit.io/agents/start/testing/simulations/) still say audio mode "isn't available yet". The CLI ships it, `SIMULATION_MODE_AUDIO` is in the protocol, and the SDK parses it — the docs are behind. Whether Cloud accepts an audio run for a given project is worth confirming with one run before relying on it.
+
+### 3️⃣ The real call — what a simulation still can't tell you
+
+Audio simulations narrow this list; they don't empty it. The judge scores a *transcript*, so it can catch a dropped turn or a guardrail miss, but it cannot tell you the agent sounded right. Nothing automated hears prosody, or judges whether a pause felt like a hang-up.
 
 So before shipping, place a real call and verify:
 
@@ -307,6 +322,8 @@ So before shipping, place a real call and verify:
 - Consent captures
 - The agent's hang-up signs off cleanly
 - The thread transcript matches what you actually heard
+
+The eval gate cannot reach any of this either: AIMock's WebSocket support is text-frames-only, and LiveKit's `voice.testing` harness takes a string and skips the audio path. Both mock the *model*, not the microphone.
 
 ---
 

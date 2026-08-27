@@ -25,11 +25,22 @@ helpers:
   and enforces per-risk coverage. **Requires Python 3** (stdlib only), which is
   otherwise not a prerequisite of this project.
 
-`livekit-simulations` can author scenarios today but cannot run them: `lk agent
-simulate` needs LiveKit CLI **v2.16.7+** for Node.js agents and the installed
-`lk` is 2.13.2. `@livekit/agents ^1.7.0` already clears its 1.6.0 floor. It is a
-public beta with no waitlist — the CLI version is the only blocker. Simulations
-are text-mode only, so they never substitute for the real-call checklist.
+`livekit-simulations` is runnable: `lk` is 2.18.3 (past the v2.16.7 floor for
+Node.js agents) and `@livekit/agents ^1.7.0` clears the 1.6.0 one. Public beta,
+no waitlist.
+
+Note the skill's own beta block is stale — it warns that runs need the project
+specially enabled, and that audio mode does not exist. Neither matches what
+shipped: `lk agent simulate audio` exists, `SIMULATION_MODE_AUDIO = 2` is in
+`@livekit/protocol`, and `@livekit/agents` parses it. Trust the CLI over the
+skill text here. Simulations still judge a transcript, so they narrow the
+real-call checklist without replacing it.
+
+The worker needs no changes to take part: a simulation arrives as an ordinary
+job carrying an `lk.simulator.dispatch` attribute, and `ctx.simulationContext()`
+returns `undefined` on a normal call. `@mastra/livekit` exposes no simulation
+surface, so the optional `onSimulationEnd` veto is unavailable — the simulator's
+own verdict stands alone.
 
 ### Scope `livekit-agents` before following it
 
