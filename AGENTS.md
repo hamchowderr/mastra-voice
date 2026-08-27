@@ -25,6 +25,12 @@ helpers:
   and enforces per-risk coverage. **Requires Python 3** (stdlib only), which is
   otherwise not a prerequisite of this project.
 
+`livekit-simulations` can author scenarios today but cannot run them: `lk agent
+simulate` needs LiveKit CLI **v2.16.7+** for Node.js agents and the installed
+`lk` is 2.13.2. `@livekit/agents ^1.7.0` already clears its 1.6.0 floor. It is a
+public beta with no waitlist — the CLI version is the only blocker. Simulations
+are text-mode only, so they never substitute for the real-call checklist.
+
 ### Scope `livekit-agents` before following it
 
 It is written for LiveKit Cloud. That part is fine — this project runs against
@@ -50,12 +56,15 @@ it is drift detection, not a version pin, and the CLI rewrites it, so do not
 hand-edit it. To pull updates:
 
 ```bash
-npx skills add mastra-ai/skills     --skill '*' --agent claude-code --copy -y
-npx skills add livekit/agent-skills --skill '*' --agent claude-code --copy -y
+npx skills add mastra-ai/skills     --skill '*' --agent claude-code -y
+npx skills add livekit/agent-skills --skill '*' --agent claude-code -y
 ```
 
-`--copy` is required. Without it the CLI symlinks into `.claude/skills/`, and a
-symlink is useless to anyone who clones the repo on another machine.
+This writes real files, not symlinks. The CLI only symlinks when installing to
+several agents at once, where it keeps one canonical copy and links each agent
+directory to it; with a single agent there is nothing to share, so it copies.
+(`--copy` forces that behaviour and is harmless, but it changes nothing here —
+verified byte-identical against a default install.)
 
 Note `.gitignore` deliberately tracks `.claude/skills/` while ignoring the rest
 of `.claude/` — settings there are personal, skills are shared.

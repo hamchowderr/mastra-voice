@@ -229,6 +229,17 @@ Three external legs per call. None of the audio stays on your host.
 
 **Inference carries STT and TTS only.** The model never touches it: `MastraVoiceAgent` supplies LiveKit's `llmNode`, so the `llm` slot goes unused and replies come from Mastra's model router — which is why the LLM leg above points at Anthropic and not at the gateway.
 
+**The model is one string, and Anthropic is only the default.** Replies come from Mastra's model router, which resolves `provider/model` against a registry of **187 providers** bundled inside `@mastra/core` — offline, no lookup service. Swapping providers is a one-line change in `src/mastra/agents/_example.ts` plus that provider's key in `.env`:
+
+```ts
+model: 'anthropic/claude-haiku-4-5',   // needs ANTHROPIC_API_KEY
+model: 'openai/gpt-4.1-mini',          // needs OPENAI_API_KEY
+```
+
+Run `node .claude/skills/mastra/scripts/provider-registry.mjs --list` to see every provider your installed version supports.
+
+This needs **no Mastra Platform account** — the router is part of `@mastra/core` and calls the provider directly from your own process with your own key. It is also not the Vercel AI SDK: this project has no `ai` dependency and calls no `generateText`/`streamText`. `@mastra/core` depends only on `@ai-sdk/provider`, the interface *spec* other providers implement, which is why AIMock can redirect a provider by setting its base URL.
+
 Self-hosting the LiveKit server does not move STT/TTS — the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
 
 The Dolt ledger records that consent was captured. It does not constrain where audio was processed.
@@ -236,6 +247,16 @@ The Dolt ledger records that consent was captured. It does not constrain where a
 ---
 
 ## 🧪 Build & test
+
+Testing here comes in three tiers that cover genuinely different things. **Only the third one hears anything.** Everything automated is text — it checks what the agent *says and decides*, never how it sounds or when it speaks.
+
+| Tier | Exercises | Covers audio? | Runs where |
+| --- | --- | --- | --- |
+| 1. Eval gate | Reply content, tool calls, scorers | No | CI, every PR |
+| 2. Agent simulations | Multi-turn conversation vs. a simulated caller | No | LiveKit Cloud, opt-in |
+| 3. Real call | Barge-in, turn-taking, disclosure timing | **Yes** | Your ears |
+
+### 1️⃣ Eval gate — automated, runs in CI
 
 ```bash
 npm run typecheck    # tsc --noEmit, covers src/ and scripts/
@@ -253,9 +274,27 @@ USE_AIMOCK=true npm run eval                         # terminal 2
 
 CI runs four jobs on every PR: **typecheck**, **eval**, **build**, and **docker** — where the image is built *and both containers are started*, so a broken entrypoint fails CI instead of a deploy.
 
-### ✅ The manual checkpoint
+Each case is one fixed input with asserted tool calls and scorer output. That makes it a regression gate: it catches a change breaking something you already knew to check.
 
-**Voice quality cannot be tested automatically, and never will be here.** AIMock's WebSocket support is text-frames-only; LiveKit's own `voice.testing` harness takes a string and skips the audio path entirely. Both mock the *model*, not the microphone.
+### 2️⃣ Agent simulations — multi-turn, still text, not wired up here
+
+LiveKit can play a scripted *caller persona* against the agent over a full conversation and have an LLM judge grade the transcript. Where the eval gate asserts known inputs, this surfaces the failures you didn't think to assert — a caller who withholds a required field, supplies an invalid one, or pushes at a guardrail.
+
+The bundled `livekit-simulations` skill writes the scenario file locally from the agent's own code (nothing is uploaded) and enforces at least one scenario per identified risk.
+
+**Not currently runnable in this repo.** It is a public beta with no waitlist, but it needs:
+
+| Requirement | Needed | Here |
+| --- | --- | --- |
+| LiveKit CLI (Node.js agents) | v2.16.7+ | `lk` 2.13.2 — **upgrade required** |
+| `@livekit/agents` | 1.6.0+ | ^1.7.0 ✅ |
+| LiveKit Cloud project | yes | depends on your `LIVEKIT_URL` |
+
+Simulations run in **text mode**; audio mode does not exist yet. So this tier widens conversational coverage — it does not shrink tier 3 by one item. See [the LiveKit docs](https://docs.livekit.io/agents/start/testing/simulations/).
+
+### 3️⃣ The real call — the only test that covers voice
+
+**Voice quality cannot be tested automatically, and never will be here.** AIMock's WebSocket support is text-frames-only; LiveKit's `voice.testing` harness takes a string and skips the audio path; simulations are text mode too. All three mock the *model*, none of them the microphone.
 
 So before shipping, place a real call and verify:
 
