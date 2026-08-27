@@ -253,7 +253,7 @@ Testing here comes in three tiers that cover genuinely different things. **Only 
 | Tier | Exercises | Covers audio? | Runs where |
 | --- | --- | --- | --- |
 | 1. Eval gate | Reply content, tool calls, scorers | No | CI, every PR |
-| 2. Agent simulations | Multi-turn conversation vs. a simulated caller | No | LiveKit Cloud, opt-in |
+| 2. Agent simulations | Multi-turn conversation vs. a simulated caller | No | LiveKit Cloud, on demand |
 | 3. Real call | Barge-in, turn-taking, disclosure timing | **Yes** | Your ears |
 
 ### 1️⃣ Eval gate — automated, runs in CI
@@ -282,11 +282,11 @@ LiveKit can play a scripted *caller persona* against the agent over a full conve
 
 The bundled `livekit-simulations` skill writes the scenario file locally from the agent's own code (nothing is uploaded) and enforces at least one scenario per identified risk.
 
-**Not currently runnable in this repo.** It is a public beta with no waitlist, but it needs:
+**Not runnable until the CLI is current.** It is a public beta with no waitlist and nothing to request access to — it needs:
 
 | Requirement | Needed | Here |
 | --- | --- | --- |
-| LiveKit CLI (Node.js agents) | v2.16.7+ | `lk` 2.13.2 — **upgrade required** |
+| LiveKit CLI (Node.js agents) | v2.16.7+ | `winget upgrade LiveKit.LiveKitCLI` |
 | `@livekit/agents` | 1.6.0+ | ^1.7.0 ✅ |
 | LiveKit Cloud project | yes | depends on your `LIVEKIT_URL` |
 
