@@ -5,6 +5,12 @@
   },
   "cases": [
     {
+      "name": "calls recordConsent when the caller answers the consent question",
+      "input": "Yes, you can store a summary of this call.",
+      "expectedTool": "recordConsent",
+      "expectedKeywords": []
+    },
+    {
       "name": "calls getCurrentTime when asked about time",
       "input": "What time is it right now?",
       "expectedTool": "getCurrentTime",
@@ -29,10 +35,12 @@
       "expectedKeywords": []
     },
     {
-      "name": "graceful exit on goodbye",
+      "name": "says farewell then calls endCall on goodbye",
       "input": "Thanks, that's all I needed. Goodbye!",
-      "expectedTool": null,
-      "expectedKeywords": ["bye"]
+      "expectedTool": "endCall",
+      "expectedKeywords": [
+        "bye"
+      ]
     }
   ]
 }
