@@ -16,13 +16,11 @@
 
 ---
 
-> **v0.2.0 is a breaking change.** The realtime transport moved from Gemini Live to LiveKit. Gemini Live's in-process STS is gone; LiveKit now owns the audio loop while Mastra owns replies, tools, and memory. **A deployment is now two processes** — the Mastra server and a separate LiveKit worker. Upgrading from v0.1.x is not drop-in.
-
 ## ⚡ What it does
 
-Someone calls. The agent answers, tells them it's an AI, asks for the consent the call needs, has the conversation, then says goodbye and hangs up itself — and every one of those compliance moments lands in a versioned ledger you can diff later.
+Someone calls. The agent answers, states that it's an AI, captures the consent the call requires, has the conversation, then says goodbye and hangs up. Each of those moments is written to a versioned ledger.
 
-The parts most voice tutorials leave out are the parts this ships:
+Included:
 
 - **AI disclosure** — a non-interruptible greeting at first contact (EU AI Act Art. 50), re-disclosed periodically on long calls (California SB 243). Spoken via TTS with no LLM round-trip.
 - **Consent — declare → capture → enforce** — the worker declares what a call needs, the agent's `recordConsent` tool captures the caller's answer, and enforcement is **deny-by-default** at end of call.
@@ -63,7 +61,7 @@ npm run dev
 
 Open `http://localhost:4111`, chat with the `voiceAssistant` agent, and send *"What time is it?"* — it should call `getCurrentTime` and answer. That proves the text pipeline end to end.
 
-### 🎙️ Then actually talk to it
+### 🎙️ Then talk to it
 
 Audio runs in a **second process**. Start it in another terminal:
 
@@ -75,15 +73,48 @@ npm run worker:download-files
 npm run worker:dev
 ```
 
-Then place a call from the hosted [LiveKit Agents Playground](https://agents-playground.livekit.io) — no frontend needed. It dispatches to the same `agentName` the worker registers under.
+With the worker running, open Studio at `http://localhost:4111`, pick the `voiceAssistant` agent, and press **Start voice call**. Studio ships a LiveKit client and calls `/voice/livekit/connection-details` — the route this template registers — so it connects to your worker with no extra setup. This is the fastest way to hear the agent.
 
-> **Studio is text-only.** It does not stream audio, so it cannot exercise turn detection, barge-in, or TTS. Voice is verified through the playground or a real phone call — never in Studio.
+The hosted [LiveKit Agents Playground](https://agents-playground.livekit.io) is the alternative when you want to test from another machine or outside Studio.
+
+Studio's **text** chat is a different thing: it exercises the agent's replies and tools, but not audio. Turn detection, barge-in, and TTS only run on a voice call.
 
 ### ☎️ Give it a phone number
 
-LiveKit does SIP telephony, and this template is built for it: the hang-up path uses `ctx.deleteRoom()` specifically because it terminates a SIP caller correctly rather than leaving a dangling leg.
+LiveKit handles SIP telephony, and the hang-up path already uses `ctx.deleteRoom()` because it terminates a SIP caller correctly instead of leaving a dangling leg. Everything under **What it does** applies identically to a phone call.
 
-Configure a SIP trunk and dispatch rule in your LiveKit project, point it at the same `agentName`, and calls to that number reach the same worker with no code change. Everything in **What it does** — disclosure, consent, hang-up, the ledger — applies identically to a phone call.
+Buy a number from a SIP provider (Twilio, Telnyx, Plivo, Wavix), point its trunk at your LiveKit SIP endpoint, then create the inbound trunk and dispatch rule with the [LiveKit CLI](https://docs.livekit.io/home/cli/cli-setup/):
+
+```bash
+# 1. Find your SIP endpoint. Strip the `p_` prefix from ProjectId:
+#    p_vjnxecm0tjk → sip:vjnxecm0tjk.sip.livekit.cloud
+lk project list --json
+
+# 2. Inbound trunk — one per phone number, reused for every call
+cat > inbound-trunk.json <<'JSON'
+{ "trunk": { "name": "mastra-voice", "numbers": ["+15105550100"] } }
+JSON
+lk sip inbound create inbound-trunk.json
+
+# 3. Dispatch rule — routes callers to a room AND dispatches this worker.
+#    agentName MUST match VOICE_AGENT_NAME in src/mastra/lib/voice.ts.
+cat > dispatch-rule.json <<'JSON'
+{
+  "dispatch_rule": {
+    "name": "mastra-voice inbound",
+    "rule": { "dispatchRuleIndividual": { "roomPrefix": "call-" } },
+    "roomConfig": { "agents": [{ "agentName": "mastra-voice" }] }
+  }
+}
+JSON
+lk sip dispatch create dispatch-rule.json
+
+lk sip inbound list && lk sip dispatch list   # verify
+```
+
+A mismatched `agentName` does not error — LiveKit accepts the call and never dispatches a worker, so the caller hears silence. Check it first when a phone call connects to nothing.
+
+> **PII warning.** `dispatchRuleIndividual` names each room after the **caller's phone number**. LiveKit records room names in logs and traces, and its [PII redaction](https://docs.livekit.io/deploy/observability/pii-redaction/) does **not** strip them. For regulated calls, route to a predetermined room with a generated ID instead.
 
 ### 🔐 Secrets with Infisical
 
@@ -292,7 +323,6 @@ Cost is **RAM-dominated**: each concurrent call spins a job runner that re-impor
 ## ⚠️ Known limitations
 
 - **`turnDetection: 'multilingual'`** uses LiveKit's deprecated text-based detector. The audio EOT `TurnDetector` can't be adopted yet: its constructor captures `getJobContext().inferenceExecutor`, and worker options are evaluated at module scope where that throws — leaving the executor `undefined`, which silently disables semantic turn detection rather than erroring. The fix is a job-scoped `turnDetection` factory upstream in `@mastra/livekit`.
-- **`TokenLimiter` is absent from `outputProcessors`.** It was removed when the processor had no output-phase hook. Core 1.56 restored them, so it's re-adoptable pending an A/B probe.
 
 ---
 

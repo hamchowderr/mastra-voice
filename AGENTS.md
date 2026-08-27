@@ -83,6 +83,32 @@ Tools used only by one agent live inline in that agent's file. Shared tools go i
 
 ---
 
+## Telephony (SIP) Setup
+
+Inbound phone calls reach the SAME worker as browser calls — no code change. What breaks is always configuration, and it breaks SILENTLY: LiveKit accepts the call and never dispatches an agent, so the caller hears silence with no error anywhere.
+
+**The invariant.** Three names must be byte-identical:
+
+1. `VOICE_AGENT_NAME` in `src/mastra/lib/voice.ts`
+2. `agentName` in the LiveKit dispatch rule's `roomConfig.agents[]`
+3. Whatever `runLiveKitWorker` registers (it reads the same constant — never inline the string)
+
+**Setup order.** Each step depends on the one before it:
+
+1. **Provider** — buy a number, create a SIP trunk, point it at the LiveKit SIP endpoint.
+2. **SIP endpoint** — `lk project list --json`, take `ProjectId` (`p_vjnxecm0tjk`), strip `p_`, giving `sip:vjnxecm0tjk.sip.livekit.cloud`. The endpoint some providers want is that URI WITHOUT the `sip:` prefix.
+3. **Inbound trunk** — `lk sip inbound create inbound-trunk.json`. One per phone number, reused for every call. Do NOT create one per call: trunks are cached long-lived objects and per-call creation degrades reliability at scale.
+4. **Dispatch rule** — `lk sip dispatch create dispatch-rule.json`, with `roomConfig.agents[].agentName`. Without `roomConfig` the caller lands in a room no agent ever joins.
+5. **Verify** — `lk sip inbound list` and `lk sip dispatch list` before placing a call.
+
+**PII — matters here because this template ships compliance controls.** `dispatchRuleIndividual` names the room after the CALLER'S PHONE NUMBER. LiveKit writes room names into logs and traces, and PII redaction does NOT strip them. For regulated calls, route to a predetermined room with a generated ID instead of using an individual rule.
+
+**A worker must always be registered.** Scale-to-zero deregisters it from LiveKit, and an inbound call then connects to silence. Only one worker flavor can run at a time — they all register under the same `agentName`.
+
+**Do not special-case SIP in agent code.** The worker cannot tell a phone caller from a browser caller, and it should not try. Disclosure, consent, hang-up, and the ledger all run identically. The only SIP-aware code is the hang-up path, which uses `ctx.deleteRoom()` because it terminates a SIP leg correctly — do not replace it with `ctx.shutdown()` alone.
+
+Full CLI walkthrough is in the README under "Give it a phone number".
+
 ## Scorer Conventions
 
 File naming: `src/mastra/scorers/<agent-name>.scorers.ts`.

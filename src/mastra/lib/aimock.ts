@@ -24,8 +24,10 @@ export function configureAIMock(): void {
   process.env.ANTHROPIC_BASE_URL = `${base}/v1`;
   process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'mock';
 
-  // Google Gemini (direct @ai-sdk/google usage, not Mastra-routed google/ models)
-  // Mastra's built-in google/ routing hardcodes the Google base URL and ignores this var.
+  // Only for a direct @ai-sdk/google client, e.g. if you swap the agent model to
+  // the google/gemma swap-in documented in the README. Mastra's built-in google/
+  // routing hardcodes the Google base URL and ignores this var, so a google/ model
+  // cannot be mocked.
   // Mastra's openai/ routing uses the Responses API (/v1/responses), not Chat Completions.
   // Use anthropic/claude-haiku-4-5 for agent text models — Mastra's anthropic/ routing
   // reads ANTHROPIC_BASE_URL correctly and uses /v1/messages which AIMock handles natively.
