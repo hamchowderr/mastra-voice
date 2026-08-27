@@ -178,7 +178,17 @@ Inbound phone calls reach the SAME worker as browser calls — no code change. W
 **Setup order.** Each step depends on the one before it:
 
 1. **Provider** — buy a number, create a SIP trunk, point it at the LiveKit SIP endpoint.
-2. **SIP endpoint** — `lk project list --json`, take `ProjectId` (`p_<id>`), strip `p_`, giving `sip:<id>.sip.livekit.cloud`. The endpoint some providers want is that URI WITHOUT the `sip:` prefix.
+2. **SIP endpoint** — take the project's URL subdomain and insert `.sip`:
+   `wss://<subdomain>.livekit.cloud` → `<subdomain>.sip.livekit.cloud`, port 5060.
+   Most providers want it WITHOUT a `sip:` prefix.
+
+   Do NOT derive it from `ProjectId`. `lk project list --json` returns an empty
+   `ProjectId` for any project added by hand rather than through `lk cloud auth`,
+   and `lk cloud auth` does not always backfill it — so a `p_<id>`-based recipe
+   is unfollowable on exactly the projects that need it most. The subdomain is
+   always present in the URL you already have. DNS is wildcarded on
+   `*.sip.livekit.cloud`, so a name resolving proves nothing; take it from the
+   URL, not from a lookup.
 3. **Inbound trunk** — `lk sip inbound create inbound-trunk.json`. One per phone number, reused for every call. Do NOT create one per call: trunks are cached long-lived objects and per-call creation degrades reliability at scale.
 4. **Dispatch rule** — `lk sip dispatch create dispatch-rule.json`, with `roomConfig.agents[].agentName`. Without `roomConfig` the caller lands in a room no agent ever joins.
 5. **Verify** — `lk sip inbound list` and `lk sip dispatch list` before placing a call.
@@ -186,6 +196,10 @@ Inbound phone calls reach the SAME worker as browser calls — no code change. W
 **PII — matters here because this template ships compliance controls.** `dispatchRuleIndividual` names the room after the CALLER'S PHONE NUMBER. LiveKit writes room names into logs and traces, and PII redaction does NOT strip them. For regulated calls, route to a predetermined room with a generated ID instead of using an individual rule.
 
 **A worker must always be registered.** Scale-to-zero deregisters it from LiveKit, and an inbound call then connects to silence. Only one worker flavor can run at a time — they all register under the same `agentName`.
+
+**Read the carrier's log before you touch LiveKit.** A call that never reaches LiveKit cannot be a LiveKit fault, and the carrier's API says which case you are in. On Telnyx, SIP-trunk calls are in `GET /v2/detail_records?filter[record_type]=sip-trunking`. They are NOT in `/v2/call_events`, which only records Call Control calls and therefore stays empty while SIP trunking fails — an empty result there reads as "no call arrived" and is the wrong conclusion.
+
+In a Telnyx record, `sip_invite_failure_status: 404` with an **empty `connection_id`** means Telnyx could not resolve the number to any destination and refused the call at ingress without sending an INVITE. That is provisioning or account state on the carrier's side. Rebuilding the trunk, the dispatch rule, or the connection cannot fix it — the decisive check is to point the number at any other destination the carrier offers (a native call-control app, say) and re-read the record. If `connection_id` is still empty, it is a support ticket, not a config bug.
 
 **Do not special-case SIP in agent code.** The worker cannot tell a phone caller from a browser caller, and it should not try. Disclosure, consent, hang-up, and the ledger all run identically. The only SIP-aware code is the hang-up path, which uses `ctx.deleteRoom()` because it terminates a SIP leg correctly — do not replace it with `ctx.shutdown()` alone.
 
@@ -283,8 +297,13 @@ Stop and confirm with the user before making these changes:
 ```bash
 npm run dev          # Start Studio at localhost:4111 (text mode)
 npm run typecheck    # Verify types before running
+npm test             # Unit tests (vitest). No Docker, no DB, no API key. ~1s
 npm run eval         # Run all eval cases in text mode; exits 0 on pass, 1 on fail
 npx supabase start   # Start local Supabase (Docker required)
 ```
+
+`npm test` is the fast gate — run it after any edit. `npm run eval` is the slow
+one: it needs Postgres and either an API key or AIMock, so it is the gate to run
+before shipping, not between edits.
 
 Eval runs with `USE_AIMOCK=false` hit the real Anthropic API and incur cost. Use `USE_AIMOCK=true` with AIMock running for free deterministic runs during development.

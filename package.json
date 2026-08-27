@@ -12,7 +12,9 @@
     "worker:start": "node --env-file=.env --import tsx src/mastra/voice-worker.ts start",
     "worker:download-files": "livekit-agents download-files",
     "eval": "node --env-file=.env --import tsx/esm scripts/eval.ts",
-    "score:list": "mastra scorers list"
+    "score:list": "mastra scorers list",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -46,6 +48,7 @@
     "@types/node": "^26.3.0",
     "mastra": "^1.26.1",
     "supabase": "^2.115.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }

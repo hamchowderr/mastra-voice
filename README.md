@@ -86,8 +86,9 @@ LiveKit handles SIP telephony, and the hang-up path already uses `ctx.deleteRoom
 Buy a number from a SIP provider (Twilio, Telnyx, Plivo, Wavix), point its trunk at your LiveKit SIP endpoint, then create the inbound trunk and dispatch rule with the [LiveKit CLI](https://docs.livekit.io/home/cli/cli-setup/):
 
 ```bash
-# 1. Find your SIP endpoint. Take ProjectId from the output and strip the
-#    `p_` prefix:  p_<id> → sip:<id>.sip.livekit.cloud
+# 1. Find your SIP endpoint. It is your project's URL subdomain with `.sip`
+#    inserted:  wss://<subdomain>.livekit.cloud → <subdomain>.sip.livekit.cloud
+#    Most providers want it WITHOUT a `sip:` prefix and with port 5060.
 lk project list --json
 
 # 2. Inbound trunk — one per phone number, reused for every call
@@ -113,6 +114,17 @@ lk sip inbound list && lk sip dispatch list   # verify
 ```
 
 A mismatched `agentName` does not error — LiveKit accepts the call and never dispatches a worker, so the caller hears silence. Check it first when a phone call connects to nothing.
+
+**When a call fails, read the provider's log before touching LiveKit.** A call that never reaches LiveKit cannot be a LiveKit problem, and the provider's own API will say so. On Telnyx the relevant log is:
+
+```bash
+# SIP-trunk calls. NOT /v2/call_events — that only records Call Control calls,
+# so it stays empty while SIP trunking fails, which reads as "no call arrived".
+curl -s -H "Authorization: Bearer $TELNYX_API_KEY" \
+  "https://api.telnyx.com/v2/detail_records?filter[record_type]=sip-trunking"
+```
+
+An `sip_invite_failure_status: 404` with an **empty `connection_id`** means the provider could not resolve the number to any destination and refused the call itself — it never sent an INVITE. That is a provider-side provisioning or account problem, not a trunk, dispatch-rule, or worker problem, and no amount of reconfiguring on the LiveKit side will change it. To confirm, assign the number to any other destination the provider offers; if the record still shows an empty `connection_id`, open a support ticket rather than rebuilding your config.
 
 > **PII warning.** `dispatchRuleIndividual` names each room after the **caller's phone number**. LiveKit records room names in logs and traces, and its [PII redaction](https://docs.livekit.io/deploy/observability/pii-redaction/) does **not** strip them. For regulated calls, route to a predetermined room with a generated ID instead.
 
