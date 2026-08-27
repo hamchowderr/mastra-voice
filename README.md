@@ -331,28 +331,21 @@ The worker ships a regulated-voice surface most tutorials skip — configured in
 - **Agent-initiated hang-up** — the agent says goodbye then calls `endCall`; the worker waits for the closing words, plays a guaranteed sign-off, and disconnects. A `stopWhen` guard structurally stops the loop so the model can't speak past its goodbye.
 - **Versioned audit ledger** — disclosure + consent + hang-up records are committed to **Dolt** as one attributed, diffable commit per call (`src/mastra/lib/compliance-ledger.ts`), off the caller's clock. Dormant until `DOLT_*` is set + the compose `dolt` service runs.
 
-### Where call data goes (data residency)
+### Where call data goes
 
-The compliance controls above are about *what you tell the caller*. This is about *where their voice actually travels* — a separate question, and one you must answer for yourself before deploying to regulated callers.
+Three external legs per call. None of the audio stays on your host.
 
-A single call involves three external parties beyond your own infrastructure:
-
-| Leg | Goes to | Carrying |
+| Leg | Endpoint | Carries |
 |---|---|---|
-| Transport | Your `LIVEKIT_URL` (LiveKit Cloud unless self-hosted) | The live audio stream |
-| STT + TTS | `agent-gateway.livekit.cloud` (**US**, hardcoded default) | Raw caller audio, and the synthesized reply |
-| LLM | Anthropic | The transcribed conversation + memory context |
+| Transport | `LIVEKIT_URL` | Live audio stream |
+| STT + TTS | `agent-gateway.livekit.cloud` (US) | Raw caller audio; synthesized reply |
+| LLM | Anthropic | Transcript + memory context |
 
-**Caller audio does not stay on your VPS.** `stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit *Inference* model strings: they resolve to LiveKit's US agent-gateway, authenticated with your `LIVEKIT_API_KEY`. That is the convenience — one credential, no separate Deepgram or Cartesia account — and it is also the trade.
+`stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit **Inference** model strings. They resolve to `DEFAULT_INFERENCE_URL` in `@livekit/agents` — a hardcoded US gateway — authenticated with `LIVEKIT_API_KEY`. This is what removes the need for separate Deepgram and Cartesia accounts.
 
-**Self-hosting the LiveKit server does not change this.** The inference endpoint is derived independently of `LIVEKIT_URL`. To keep STT/TTS off LiveKit Cloud you must either:
+Self-hosting the LiveKit server does not move STT/TTS: the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, either set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
 
-- set `LIVEKIT_INFERENCE_URL` to your own gateway, or
-- pass real plugin instances instead of model strings (`stt: new deepgram.STT({...})`), using your own provider accounts and their regions.
-
-Likewise, the audit ledger records *that* consent was captured — it does not constrain where the audio was processed.
-
-None of this is a defect. It is the default data path, and for many deployments it is fine. But a template that ships EU AI Act and SB 243 controls invites use with EU callers, so the path is documented here rather than left to be discovered. Whether it satisfies your obligations is a question for you and your counsel, not for this README.
+The Dolt ledger records that consent was captured. It does not constrain where audio was processed.
 
 ### Model swap-ins
 
