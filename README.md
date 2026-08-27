@@ -227,6 +227,8 @@ Three external legs per call. None of the audio stays on your host.
 
 `stt: 'deepgram/nova-3'` and `tts: 'cartesia/sonic-3'` are LiveKit **Inference** model strings, resolving to a hardcoded US gateway authenticated with `LIVEKIT_API_KEY`. This is what removes the need for separate Deepgram and Cartesia accounts.
 
+**Inference carries STT and TTS only.** The model never touches it: `MastraVoiceAgent` supplies LiveKit's `llmNode`, so the `llm` slot goes unused and replies come from Mastra's model router — which is why the LLM leg above points at Anthropic and not at the gateway.
+
 Self-hosting the LiveKit server does not move STT/TTS — the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
 
 The Dolt ledger records that consent was captured. It does not constrain where audio was processed.
@@ -338,7 +340,7 @@ Three skills are vendored into `.claude/skills/` and committed, so a plain `git 
 | `livekit-agents` | Worker lifecycle, room handling, the audio pipeline |
 | `livekit-simulations` | Generating and running scenario tests against the agent |
 
-`livekit-agents` is written for LiveKit Cloud; [`AGENTS.md`](AGENTS.md#scope-livekit-agents-before-following-it) says which parts to ignore here. Versions are pinned in `skills-lock.json`.
+`livekit-agents` is written for LiveKit Cloud; [`AGENTS.md`](AGENTS.md#scope-livekit-agents-before-following-it) says which parts to ignore here. The committed files are the pinned version — `skills-lock.json` only records a tree hash so `npx skills update` can spot upstream drift.
 
 ---
 

@@ -14,16 +14,27 @@ install.
 | --- | --- |
 | `mastra` | Touching any Mastra API. Its own first rule is the important one: do not trust model memory — read `node_modules/@mastra/*/dist/docs/` for the exact installed version. |
 | `livekit-agents` | Working on the worker, room lifecycle, or audio pipeline. |
-| `livekit-simulations` | Generating and running scenario tests against the voice agent. |
+| `livekit-simulations` | Authoring scenario tests against the voice agent. |
+
+Two of the skills carry a script, and both are load-bearing rather than optional
+helpers:
+
+- `mastra/scripts/provider-registry.mjs` — the skill requires running it before
+  naming any model string. Node, no dependencies.
+- `livekit-simulations/scripts/build_scenarios.py` — assembles the scenario file
+  and enforces per-risk coverage. **Requires Python 3** (stdlib only), which is
+  otherwise not a prerequisite of this project.
 
 ### Scope `livekit-agents` before following it
 
-It is written for LiveKit Cloud and says so in its own opening paragraph. Two of
-its assumptions do not hold here:
+It is written for LiveKit Cloud. That part is fine — this project runs against
+either Cloud or a self-hosted server, and `stt`/`tts` do go through LiveKit
+Inference. What does not hold is narrower:
 
-- **LiveKit Inference is not in this stack.** `MastraVoiceAgent` supplies
-  `llmNode`, so LiveKit's `llm` slot is never used and the model comes from
-  Mastra's router. Skip every Inference recommendation.
+- **The LLM leg does not go through LiveKit.** `MastraVoiceAgent` supplies
+  `llmNode`, so LiveKit's `llm` slot is never used — replies come from Mastra's
+  model router. Its Inference guidance applies to STT and TTS only; ignore it
+  for the model.
 - **Agent structure lives in Mastra, not the LiveKit SDK.** Its guidance on
   `Agent` classes, handoffs, and tasks describes a layer this project does not
   use. Take agent, tool, and memory design from the `mastra` skill instead.
@@ -33,7 +44,10 @@ insistence on tests.
 
 ### Refreshing them
 
-Versions are pinned by content hash in `skills-lock.json`. To pull updates:
+The committed files are the pinned version. `skills-lock.json` records a git
+tree hash per skill so `npx skills update` can tell whether upstream has moved —
+it is drift detection, not a version pin, and the CLI rewrites it, so do not
+hand-edit it. To pull updates:
 
 ```bash
 npx skills add mastra-ai/skills     --skill '*' --agent claude-code --copy -y
