@@ -70,6 +70,7 @@ RUN mkdir -p "$HF_HOME" && \
 # recall embeds on every turn, so without it the FIRST call downloads it mid-call
 # — and that first embed loses the race against its own download, failing with
 # `Tokenizer file not found at .../fast-bge-small-en-v1.5/tokenizer.json`. It
+# lands in /app/.cache/mastra, which the runtime stage copies alongside the
 # LiveKit models. NO `|| true` here: a swallowed failure is what ships a broken
 # image, so let the build fail instead.
 #
@@ -101,6 +102,11 @@ RUN npm prune --omit=dev
 #
 # linux/arm64 is deliberately kept so this same Dockerfile still produces a
 # working image when built for arm64.
+#
+# These are the only two paths worth deleting because `overrides` in package.json
+# holds onnxruntime-node to ONE version, so npm hoists a single copy per tree. If
+# that pin is ever dropped, a nested copy reappears (under @mastra/fastembed) and
+# this step silently stops covering it — which matters for far more than size.
 RUN rm -rf       node_modules/onnxruntime-node/bin/napi-v6/darwin       node_modules/onnxruntime-node/bin/napi-v6/win32       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/darwin       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/win32
 
 # ─── Stage 2: runtime ─────────────────────────────────────────────
