@@ -76,17 +76,20 @@ export default createLiveKitWorker({
     // fixed delay, so a caller who pauses mid-thought isn't cut off while a clean
     // stop is still picked up quickly.
     //
-    // maxDelay is raised from LiveKit's 3000ms default (voice-b5j). It is the cap
-    // on how long the agent will keep waiting while the detector still reads the
-    // caller as unfinished — so it is exactly the budget for a mid-sentence pause,
-    // and a ~3s pause sat right on the default and got cut off ("...and I just
-    // wanted —"). Measured against real audio, not guessed: the scenario that
-    // caught it is "rambles with long pauses" in simulations/authored.yaml.
+    // maxDelay is raised from LiveKit's 3000ms default: it caps how long the agent
+    // keeps waiting while the detector still reads the caller as unfinished, so it
+    // is the budget for a mid-sentence pause, and 3000ms is shorter than pauses
+    // real callers actually take.
     //
-    // This does NOT add latency to ordinary turns. When the caller has clearly
-    // finished, the detector says so and the reply starts after minDelay; maxDelay
-    // is only ever reached when the caller sounds mid-thought, which is precisely
-    // when waiting is the right answer.
+    // It is NOT what fixed voice-b5j — the text detector was scoring a trailing
+    // clause as *confidently* finished, and dynamic endpointing derives its wait
+    // from that confidence, so maxDelay was never reached. The audio detector
+    // above is the fix. The larger cap earns its place now that the detector is
+    // good enough to be trusted when it says the caller is still going.
+    //
+    // This costs ordinary turns nothing. When the caller has clearly finished, the
+    // detector says so and the reply starts after minDelay; maxDelay is only ever
+    // reached when the caller sounds mid-thought, which is when waiting is right.
     endpointing: { mode: 'dynamic', minDelay: 500, maxDelay: 5000 },
     // Interruption (barge-in) is on by default. These are the knobs to reach for:
     // minDuration ignores sub-500ms blips as interruptions; resumeFalseInterruption
