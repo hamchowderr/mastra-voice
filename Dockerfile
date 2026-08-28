@@ -85,6 +85,24 @@ RUN HOME=/app node --input-type=module -e "const { warmup } = await import('@mas
 # dependency, self-contained — it needs neither the mastra CLI nor the typescript pkg).
 RUN npm prune --omit=dev
 
+# onnxruntime-node ships prebuilt binaries for EVERY platform inside a single
+# package (bin/napi-v6/{darwin,linux,win32}/{arm64,x64}), so npm's
+# optionalDependencies pruning — which is what keeps @esbuild, @rollup and @img
+# down to one platform — cannot touch it. In a Linux image the macOS and Windows
+# copies can never be loaded:
+#
+#   darwin/arm64  72.3 MB      linux/x64    35.9 MB   <- used
+#   win32/arm64   65.9 MB      linux/arm64  19.0 MB   <- kept for arm64 builds
+#   win32/x64     60.7 MB
+#
+# That is ~199 MB of unloadable binaries, and the image carries the package
+# TWICE — once in the server bundle that `mastra build` installs, once in the
+# worker's tree — so removing them saves roughly 400 MB.
+#
+# linux/arm64 is deliberately kept so this same Dockerfile still produces a
+# working image when built for arm64.
+RUN rm -rf       node_modules/onnxruntime-node/bin/napi-v6/darwin       node_modules/onnxruntime-node/bin/napi-v6/win32       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/darwin       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/win32
+
 # ─── Stage 2: runtime ─────────────────────────────────────────────
 FROM node:22-slim AS runtime
 WORKDIR /app
