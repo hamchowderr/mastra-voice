@@ -33,6 +33,11 @@ services:
     env_file:
       - .env
     environment:
+      # Container clocks are UTC, and getCurrentTime falls back to the container's
+      # timezone when the caller doesn't name one — so an agent answering a US
+      # phone line will confidently say the wrong DAY for most of the evening.
+      # Set TZ to the timezone the business actually operates in.
+      - TZ=${TZ:-UTC}
       - NODE_ENV=production
       # Mastra memory + RAG → the postgres service (private, internal network)
       - SUPABASE_DB_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
@@ -80,6 +85,11 @@ services:
     env_file:
       - .env
     environment:
+      # Container clocks are UTC, and getCurrentTime falls back to the container's
+      # timezone when the caller doesn't name one — so an agent answering a US
+      # phone line will confidently say the wrong DAY for most of the evening.
+      # Set TZ to the timezone the business actually operates in.
+      - TZ=${TZ:-UTC}
       - NODE_ENV=production
       # Same stores as the server — both processes write concurrently (Postgres
       # handles that; a single-writer store would not).
