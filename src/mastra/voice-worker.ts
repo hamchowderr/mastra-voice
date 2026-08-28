@@ -66,10 +66,20 @@ export default createLiveKitWorker({
     // Endpointing decides when the caller's turn is over. 'dynamic' adjusts the
     // wait from the turn detector's end-of-utterance prediction rather than a
     // fixed delay, so a caller who pauses mid-thought isn't cut off while a clean
-    // stop is still picked up quickly. minDelay/maxDelay left at LiveKit's
-    // defaults (500ms / 3000ms) — tune them against REAL audio in voice-9jm.12,
-    // not by guesswork here.
-    endpointing: { mode: 'dynamic' },
+    // stop is still picked up quickly.
+    //
+    // maxDelay is raised from LiveKit's 3000ms default (voice-b5j). It is the cap
+    // on how long the agent will keep waiting while the detector still reads the
+    // caller as unfinished — so it is exactly the budget for a mid-sentence pause,
+    // and a ~3s pause sat right on the default and got cut off ("...and I just
+    // wanted —"). Measured against real audio, not guessed: the scenario that
+    // caught it is "rambles with long pauses" in simulations/authored.yaml.
+    //
+    // This does NOT add latency to ordinary turns. When the caller has clearly
+    // finished, the detector says so and the reply starts after minDelay; maxDelay
+    // is only ever reached when the caller sounds mid-thought, which is precisely
+    // when waiting is the right answer.
+    endpointing: { mode: 'dynamic', minDelay: 500, maxDelay: 5000 },
     // Interruption (barge-in) is on by default. These are the knobs to reach for:
     // minDuration ignores sub-500ms blips as interruptions; resumeFalseInterruption
     // resumes the reply if the "interruption" turns out to be silence. Left at

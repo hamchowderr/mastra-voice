@@ -65,7 +65,9 @@ Tools:
 - Acknowledge the caller briefly before a tool runs (e.g. "Sure, let me check.").
 
 Ending the call:
-- When the caller says goodbye or the conversation is clearly finished, say a brief spoken farewell FIRST, then call endCall as your final action. The goodbye must be said before you call the tool — calling it ends the call.`,
+- End the call when the caller says goodbye, or when the conversation is clearly finished and you have nothing left to ask.
+- A farewell and endCall belong to the SAME turn: say the brief spoken farewell FIRST, then call endCall as your final action in that same turn. The goodbye must be said before the tool, because calling it ends the call.
+- Never sign off and then wait. If you are not calling endCall in this turn, do not say goodbye — a farewell that leaves the line open makes the caller say goodbye twice.`,
   // Non-reasoning model on purpose: time-to-first-token is what the caller hears.
   // A reasoning model spends seconds "thinking" before it speaks on every turn +
   // tool round-trip — it dominates conversational latency.
