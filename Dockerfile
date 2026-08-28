@@ -66,6 +66,20 @@ RUN mkdir -p "$HF_HOME" && \
     (HOME=/app npx livekit-agents download-files || \
      echo "download-files: nothing baked — worker will fetch on first cold start")
 
+# Bake the fastembed embedding model (~133MB) the same way. Memory's semantic
+# recall embeds on every turn, so without it the FIRST call downloads it mid-call
+# — and that first embed loses the race against its own download, failing with
+# `Tokenizer file not found at .../fast-bge-small-en-v1.5/tokenizer.json`. It
+# LiveKit models. NO `|| true` here: a swallowed failure is what ships a broken
+# image, so let the build fail instead.
+#
+# HOME=/app for the same reason as the step above — fastembed resolves its cache
+# as `os.homedir()/.cache/mastra/fastembed-models`, so with the default
+# HOME=/root the model lands outside the tree the runtime stage copies and the
+# build "succeeds" having baked nothing.
+RUN HOME=/app node --input-type=module -e "const { warmup } = await import('@mastra/fastembed'); await warmup();" && \
+    test -f /app/.cache/mastra/fastembed-models/fast-bge-small-en-v1.5/tokenizer.json
+
 # Drop devDependencies (mastra CLI, typescript, types) AFTER the build: the runtime
 # server runs the built bundle and the worker runs from source via tsx (a PRODUCTION
 # dependency, self-contained — it needs neither the mastra CLI nor the typescript pkg).
