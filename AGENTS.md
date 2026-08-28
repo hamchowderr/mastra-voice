@@ -276,6 +276,8 @@ The `MastraEditor` instance gives non-developers a way to iterate on agent promp
 - **Never construct an AI SDK client before `configureAIMock()`** — AIMock will be bypassed silently
 - **Never use lists or markdown in voice agent instructions** — they are spoken aloud and sound unnatural
 - **Never change the Dockerfile base to `node:22-alpine`** — `onnxruntime-node` (fastembed embeddings, and LiveKit's Silero VAD + turn-detector) ships glibc-linked prebuilds with no musl build; `sharp` and the native tokenizers are the same. Stay on `node:22-slim`
+- **Never let a second `onnxruntime-node` into the tree** — both bindings load a library whose SONAME is `libonnxruntime.so.1`, so on Linux the first one loaded wins process-wide and the other throws inside the job subprocess's prewarm, where the rejection is logged at debug and the child exits `0`. Calls connect to silence and nothing names the cause. Held to one version by `overrides` in `package.json`; check with `npm ls onnxruntime-node`
+- **Never wrap a Dockerfile model bake in `|| true`** — a swallowed failure ships an image that registers a worker which cannot serve a call. Both bakes run with `HOME=/app` (the downloaders resolve `os.homedir()`, not `HF_HOME`) and are each followed by a `test -f`
 - **Never add a new env var without updating `.env.example`** — new devs won't know it exists
 - **Never skip the Zod schema for a new env var** — process will start with undefined values silently
 - **Never import from `src/mastra/` in `src/lib/`** — creates circular dependency risk

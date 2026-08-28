@@ -402,6 +402,10 @@ Cost is **RAM-dominated**: each concurrent call spins a job runner that re-impor
 | Container crashes (SIGSEGV) | Native modules need glibc | Use `node:22-slim`, not `node:22-alpine` |
 | `ECONNREFUSED` inside Docker | `127.0.0.1` in a DB URL | Use service names (`postgres`, `dolt`) — already wired in compose |
 | Call connects to silence | No worker running, or scaled to zero | Keep ≥1 `worker` up; check it registered under the right `agentName` |
+| Calls go silent after a busy period, worker still `running` | The shared inference process was killed and nothing restarts it | `docker compose ps` shows `unhealthy`; `docker compose restart worker`. See Known limitations |
+| `process exited before initializing (code 0, signal null)`, no child output | Two `onnxruntime-node` versions in the tree — on Linux the second binding cannot load | `npm ls onnxruntime-node`; pin one via `overrides` (already pinned here) |
+| `no native root CA certificates found` on connect | Runtime image has no OS trust store; `@livekit/rtc-node` is Rust and does not use Node's bundled CAs | Install `ca-certificates` in the runtime stage (already in the Dockerfile) |
+| `Tokenizer file not found … fast-bge-small-en-v1.5` | Embedding model not baked, so the first call raced its own download | Bake it at build time with `warmup()` (already in the Dockerfile) |
 | `runner initialization timed out` | Subprocess re-imports ~2 GB | Already raised via `initializeProcessTimeout`; if it persists the host is RAM-starved |
 | Replies lag; log shows `inference is slower than realtime` | Host RAM/CPU starved | Free RAM, set `numIdleProcesses: 0`, run the call client off-box |
 | Agent missing from Studio | Not registered in `mastra.agents` | Add it in `src/mastra/index.ts` |
@@ -410,7 +414,9 @@ Cost is **RAM-dominated**: each concurrent call spins a job runner that re-impor
 
 ## ⚠️ Known limitations
 
-- **`turnDetection: 'multilingual'`** uses LiveKit's deprecated text-based detector. The audio EOT `TurnDetector` can't be adopted yet: its constructor captures `getJobContext().inferenceExecutor`, and worker options are evaluated at module scope where that throws — leaving the executor `undefined`, which silently disables semantic turn detection rather than erroring. The fix is a job-scoped `turnDetection` factory upstream in `@mastra/livekit`.
+- **A dead inference process is never replaced.** One shared subprocess runs the turn detector for every call. If it is killed — it stops answering pings under load, and its supervisor kills it — nothing starts another. End-of-turn detection then fails for *every* subsequent call while the worker keeps registering and accepting jobs, so calls connect and sit in silence. The worker's healthcheck on `:8081` reports `503 inference process not running`, and the `worker` service in `docker-compose.yml` probes it, but plain Compose only marks the container unhealthy — it restarts on process *exit*, not on health. Acting on it needs an orchestrator that does, or a restart-unhealthy sidecar.
+
+- **`turnDetection` uses the cloud audio model.** `inference.eot.TurnDetector({ version: 'v1' })` runs over LiveKit's inference gateway on the same `LIVEKIT_*` credentials as the STT and TTS — no extra account, but it is a network hop per turn and it is not free. The local alternative (`'v1-mini'`) needs the job context's inference executor, which a module-scope instance cannot reach; adopting it needs a job-scoped `turnDetection` factory upstream in `@mastra/livekit`. Do not simply omit `version` — on a self-hosted worker the default resolves to `'v1-mini'`, which is exactly that degraded path.
 
 ---
 
