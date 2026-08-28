@@ -50,5 +50,9 @@
     "supabase": "^2.115.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
+  },
+  "//overrides": "Four packages pin onnxruntime-node to an EXACT version: @livekit/agents-plugin-silero, @livekit/agents-plugin-livekit and @huggingface/transformers want 1.24.3, @mastra/fastembed wants 1.26.0. npm therefore installs two copies, and on Linux that is fatal: both native bindings load a shared library whose SONAME is libonnxruntime.so.1, so whichever copy is dlopen'd FIRST wins for the whole process and the other one fails with 'version VERS_<x> not found'. The Mastra import pulls fastembed in first, so loading the Silero VAD then throws inside the job subprocess's prewarm - which @livekit/agents swallows as an unhandled rejection, leaving the child to exit 0 with no output and the worker to log only 'process exited before initializing (code 0, signal null)'. Calls connect to silence. Pinning one version collapses it to a single binding plus library; 1.24.3 wins because three of the four consumers ask for it, including both LiveKit audio plugins. Windows hides this (DLLs resolve per-directory), so it only shows up in Docker or on a Linux host. Drop the override once the packages agree.",
+  "overrides": {
+    "onnxruntime-node": "1.24.3"
   }
 }

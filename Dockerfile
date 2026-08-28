@@ -82,10 +82,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends tini wget && rm
 # `-m` (create the home directory), NOT `-M`. @livekit/agents' download-files
 # writes the turn-detector model under $HOME and ignores HF_HOME for that step,
 # so a user with no home directory fails with
-# `EACCES: permission denied, mkdir '/home/mastra'`. The worker still REGISTERS
-# without the model — it only fails when a job process starts, exiting 0 with
-# `process exited before initializing`, so calls connect to silence and nothing
-# in the logs names the cause.
+# `EACCES: permission denied, mkdir '/home/mastra'`. That failure is swallowed by
+# the `|| echo` on the bake step above, so the image builds green and ships
+# without the model; the worker then refetches it on the first cold start, on the
+# caller's clock, and needs network egress to do it.
 RUN groupadd -g 1001 nodejs && \
     useradd -u 1001 -g nodejs -s /bin/sh -m -d /home/mastra mastra && \
     chown -R mastra:nodejs /app /home/mastra
