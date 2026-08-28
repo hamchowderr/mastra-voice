@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
+import { inference } from '@livekit/agents';
 import { createLiveKitWorker, runLiveKitWorker } from '@mastra/livekit/worker';
 
 import { mastra } from './index';
@@ -41,18 +42,25 @@ export default createLiveKitWorker({
   stt: 'deepgram/nova-3',
   tts: 'cartesia/sonic-3',
 
-  // Semantic end-of-turn, run locally on CPU against the live transcript, so a
-  // caller who pauses mid-thought isn't cut off. 'english' is the lighter model.
+  // End-of-turn detection: decides when the caller has actually finished talking.
   //
-  // NOTE (voice-l9r): @livekit/agents 1.5.x deprecates this text-based turn
-  // detector in favor of the audio EOT `TurnDetector` (@livekit/agents/inference).
-  // Migration is deferred, not overlooked: @mastra/livekit@0.3.0 still documents
-  // 'multilingual' as supported and only constructs a custom TurnDetector INSIDE
-  // the job context — a module-scope instance freezes its inference executor to
-  // `undefined`, degrading the local v1-mini fallback. Deprecated != broken, and
-  // the swap needs real-audio verification (voice-9jm.12). Revisit when
-  // @mastra/livekit ships native audio-EOT support.
-  turnDetection: 'multilingual',
+  // The AUDIO detector (voice-l9r), not the deprecated text-based one. The text
+  // model reads the transcript, so it only ever sees words — and a caller who
+  // trails off mid-sentence ("I'm calling about something…") produces a
+  // complete-looking clause that it confidently scores as finished, cutting the
+  // caller off ~500ms later. No endpointing delay fixes that: `dynamic` mode
+  // derives its wait FROM that confidence, so a confidently-wrong prediction
+  // never reaches maxDelay. The audio detector hears the prosody instead, which
+  // is the only signal that distinguishes a pause from an ending (voice-b5j).
+  //
+  // `version: 'v1'` pins the CLOUD model, served over the same LiveKit inference
+  // gateway as the STT/TTS above and authenticated with the same LIVEKIT_*
+  // credentials — no extra account, no extra key. That also makes a module-scope
+  // instance safe here: only the local 'v1-mini' fallback needs the job context's
+  // inference executor (a module-scope instance would freeze it to `undefined`),
+  // and the cloud transport needs no executor at all. Left unpinned, the default
+  // is 'v1-mini' on a self-hosted worker, which is exactly that degraded path.
+  turnDetection: new inference.eot.TurnDetector({ version: 'v1' }),
 
   // Silero VAD (the default) — stated explicitly because it's a knob worth knowing.
   vad: 'silero',
