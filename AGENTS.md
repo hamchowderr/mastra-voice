@@ -222,7 +222,7 @@ Voice agent datasets use `expectedTool` (string or null) and `expectedKeywords` 
   "agentId": "voiceAssistant",
   "thresholds": { "answerRelevancy": 0.4 },
   "cases": [
-    { "name": "...", "input": "...", "expectedTool": "getCurrentTime", "expectedKeywords": [] }
+    { "name": "...", "input": "...", "expectedTool": "evaluateMath", "expectedKeywords": [] }
   ]
 }
 ```

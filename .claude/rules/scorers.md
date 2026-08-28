@@ -18,7 +18,7 @@ keyword presence in the response text.
   "agentId": "voiceAssistant",
   "thresholds": { "answerRelevancy": 0.4 },
   "cases": [
-    { "name": "...", "input": "...", "expectedTool": "getCurrentTime", "expectedKeywords": [] }
+    { "name": "...", "input": "...", "expectedTool": "evaluateMath", "expectedKeywords": [] }
   ]
 }
 ```

@@ -76,21 +76,21 @@ export default createLiveKitWorker({
     // fixed delay, so a caller who pauses mid-thought isn't cut off while a clean
     // stop is still picked up quickly.
     //
-    // maxDelay is raised from LiveKit's 3000ms default: it caps how long the agent
-    // keeps waiting while the detector still reads the caller as unfinished, so it
-    // is the budget for a mid-sentence pause, and 3000ms is shorter than pauses
-    // real callers actually take.
+    // Left at LiveKit's defaults (500ms / 3000ms), deliberately, after measuring.
     //
-    // It is NOT what fixed voice-b5j — the text detector was scoring a trailing
-    // clause as *confidently* finished, and dynamic endpointing derives its wait
-    // from that confidence, so maxDelay was never reached. The audio detector
-    // above is the fix. The larger cap earns its place now that the detector is
-    // good enough to be trusted when it says the caller is still going.
+    // maxDelay was briefly raised to 5000ms to stop the agent talking over a
+    // caller who paused mid-sentence (voice-b5j). That was the wrong lever: the
+    // TEXT detector was scoring a trailing clause as *confidently* finished, and
+    // dynamic endpointing derives its wait from that confidence, so maxDelay was
+    // never reached and the wider cap bought nothing. The audio detector above is
+    // what actually fixed it.
     //
-    // This costs ordinary turns nothing. When the caller has clearly finished, the
-    // detector says so and the reply starts after minDelay; maxDelay is only ever
-    // reached when the caller sounds mid-thought, which is when waiting is right.
-    endpointing: { mode: 'dynamic', minDelay: 500, maxDelay: 5000 },
+    // The cap is back down because it is not free. LiveKit agent observability put
+    // per-turn latency at 2.46s average, of which only ~0.85s is the model (TTFT)
+    // and ~0.22s the voice (TTFB) — the rest is endpointing plus STT finalisation.
+    // A wide cap is time the caller spends waiting whenever the detector is unsure.
+    // Re-measure in the session view before changing either number again.
+    endpointing: { mode: 'dynamic', minDelay: 500, maxDelay: 3000 },
     // Interruption (barge-in) is on by default. These are the knobs to reach for:
     // minDuration ignores sub-500ms blips as interruptions; resumeFalseInterruption
     // resumes the reply if the "interruption" turns out to be silence. Left at
@@ -170,8 +170,6 @@ export default createLiveKitWorker({
   // worse than saying nothing.
   toolFeedback: ({ toolName }) => {
     switch (toolName) {
-      case 'getCurrentTime':
-        return 'Let me check the time.';
       case 'evaluateMath':
         return 'Let me work that out.';
       default:

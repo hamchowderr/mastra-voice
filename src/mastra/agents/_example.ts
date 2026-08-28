@@ -1,7 +1,7 @@
 import { Agent } from '@mastra/core/agent';
 
 import { env } from '../../lib/env';
-import { getCurrentTime, evaluateMath } from '../tools/time-and-math';
+import { evaluateMath } from '../tools/math';
 import { recordConsentTool } from '../tools/consent';
 import { endCallTool } from '../tools/end-call';
 import { answerRelevancyScorer } from '../scorers/_example.scorers';
@@ -26,7 +26,8 @@ const stopOnToolCall =
 /**
  * Voice Assistant — canonical example for the voice template.
  *
- * Can tell time and do math. Tools attached here flow to the voice runtime.
+ * Answers date/time questions from its instructions and does math with a tool.
+ * Tools attached here flow to the voice runtime.
  *
  * Who calls it:
  *   REST (text mode): POST /api/agents/voiceAssistant/generate
@@ -36,10 +37,16 @@ const stopOnToolCall =
 export const voiceAssistantAgent = new Agent({
   id: 'voiceAssistant',
   name: 'Voice Assistant',
-  description: 'Real-time voice assistant. Handles tool-calling for time queries and math evaluation. Reference implementation for voice agents in the family.',
+  description: 'Real-time voice assistant. Answers date/time from context and calls a tool for math. Reference implementation for voice agents in the family.',
   // Telephone-first instructions (voice-9jm.18): written for the ear, not the
   // screen. Every rule here exists because it changes what the caller HEARS.
-  instructions: `You are a friendly real-time voice assistant on a phone call. Everything you say is spoken aloud, so write for the ear, not the screen.
+  //
+  // A FUNCTION, not a string, so the clock below is read per request rather than
+  // frozen at module load. The date and time are baked in deliberately: a tool
+  // call costs a whole extra model round-trip (decide to call -> run -> generate
+  // the reply), which the caller hears as dead air, and time is always knowable
+  // without asking anything. It reads the CONTAINER clock, so set TZ.
+  instructions: () => `You are a friendly real-time voice assistant on a phone call. Everything you say is spoken aloud, so write for the ear, not the screen.
 
 The first thing the caller heard was an automated notice that they are speaking with an AI assistant — do not repeat that disclosure yourself.
 
@@ -60,8 +67,9 @@ How to speak:
 Hearing the caller (speech-to-text can mishear):
 - If you didn't clearly hear a number, name, or code, ask the caller to repeat it. Never guess or fill in digits you didn't hear.
 
+Right now it is ${new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}). Answer date and time questions straight from that — never say you can't know, and never guess a different date.
+
 Tools:
-- When asked about the time, ALWAYS call getCurrentTime. Don't guess.
 - When asked to do math, ALWAYS call evaluateMath. Don't compute in your head.
 - Acknowledge the caller briefly before a tool runs (e.g. "Sure, let me check.").
 
@@ -80,7 +88,7 @@ Ending the call:
   // fixtures against). CI validates the text path only; AIMock cannot intercept the
   // WebRTC audio loop.
   model: voiceModel,
-  tools: { getCurrentTime, evaluateMath, recordConsent: recordConsentTool, endCall: endCallTool },
+  tools: { evaluateMath, recordConsent: recordConsentTool, endCall: endCallTool },
   // Structural stop-on-goodbye (voice-9jm.18): the loop never runs the step after
   // endCall, so the model cannot speak past its farewell. Determinism in code, not
   // prompt-discipline hope. Applies on every path because it lives on the agent.

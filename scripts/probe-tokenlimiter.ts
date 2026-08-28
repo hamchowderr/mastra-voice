@@ -28,11 +28,11 @@ configureAIMock();
 
 const { Agent } = await import('@mastra/core/agent');
 const { TokenLimiter } = await import('@mastra/core/processors');
-const { getCurrentTime, evaluateMath } = await import('../src/mastra/tools/time-and-math');
+const { evaluateMath } = await import('../src/mastra/tools/math');
 const { voiceModel } = await import('../src/mastra/lib/model');
 
 const INSTRUCTIONS =
-  'You are a terse assistant. Use getCurrentTime for time questions and evaluateMath for arithmetic.';
+  'You are a terse assistant. Use evaluateMath for arithmetic.';
 
 const build = (withLimiter: boolean) =>
   new Agent({
@@ -40,7 +40,7 @@ const build = (withLimiter: boolean) =>
     name: withLimiter ? 'probe-with-limiter' : 'probe-without-limiter',
     instructions: INSTRUCTIONS,
     model: voiceModel,
-    tools: { getCurrentTime, evaluateMath },
+    tools: { evaluateMath },
     outputProcessors: withLimiter ? [new TokenLimiter({ limit: 2000, strategy: 'truncate' })] : [],
   });
 

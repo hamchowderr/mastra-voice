@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateMath, getCurrentTime } from './time-and-math';
+import { evaluateMath } from './math';
 
 // The tools declare `execute: async ({ ... }) => ...`, so input is passed
 // straight through. Narrowed here rather than reaching for `any` at each call.
@@ -50,28 +50,5 @@ describe('evaluateMath', () => {
 
   it('rejects a division that does not produce a finite number', async () => {
     await expect(run(evaluateMath, { expression: '1/0' })).rejects.toThrow(/finite number/);
-  });
-});
-
-describe('getCurrentTime', () => {
-  it('returns an ISO timestamp and echoes the requested timezone', async () => {
-    const out = await run<{ iso: string; formatted: string; timezone: string }>(getCurrentTime, {
-      timezone: 'America/Los_Angeles',
-    });
-    expect(out.timezone).toBe('America/Los_Angeles');
-    expect(Number.isNaN(Date.parse(out.iso))).toBe(false);
-    expect(out.formatted.length).toBeGreaterThan(0);
-  });
-
-  it('falls back to the system timezone when none is given', async () => {
-    const out = await run<{ timezone: string }>(getCurrentTime, {});
-    expect(out.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  });
-
-  it('formats for the requested zone, not the system one', async () => {
-    const a = await run<{ formatted: string }>(getCurrentTime, { timezone: 'Pacific/Kiritimati' });
-    const b = await run<{ formatted: string }>(getCurrentTime, { timezone: 'Pacific/Niue' });
-    // These zones are ~25h apart, so the rendered dates cannot match.
-    expect(a.formatted).not.toBe(b.formatted);
   });
 });

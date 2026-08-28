@@ -28,29 +28,6 @@
     },
     {
       "match": {
-        "userMessage": "What time is it right now?",
-        "hasToolResult": false
-      },
-      "response": {
-        "toolCalls": [
-          {
-            "name": "getCurrentTime",
-            "arguments": {}
-          }
-        ]
-      }
-    },
-    {
-      "match": {
-        "userMessage": "What time is it right now?",
-        "hasToolResult": true
-      },
-      "response": {
-        "content": "Sure, let me check. It's currently mid-morning."
-      }
-    },
-    {
-      "match": {
         "userMessage": "47 times 23",
         "hasToolResult": false
       },
@@ -121,6 +98,15 @@
             }
           }
         ]
+      }
+    },
+    {
+      "match": {
+        "userMessage": "What time is it right now?",
+        "hasToolResult": false
+      },
+      "response": {
+        "content": "It's just after ten in the morning."
       }
     }
   ]

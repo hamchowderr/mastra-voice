@@ -59,7 +59,7 @@ npx supabase start
 npm run dev
 ```
 
-Open `http://localhost:4111`, chat with the `voiceAssistant` agent, and send *"What time is it?"* — it should call `getCurrentTime` and answer. That proves the text pipeline end to end.
+Open `http://localhost:4111`, chat with the `voiceAssistant` agent, and send *"What is 47 times 23?"* — it should call `evaluateMath` and answer `1081`. That proves the text pipeline end to end. (Ask it the date instead and it answers straight from its instructions, with no tool call — see `TZ` in `.env.example`.)
 
 ### 🎙️ Then talk to it
 

@@ -11,9 +11,9 @@
       "expectedKeywords": []
     },
     {
-      "name": "calls getCurrentTime when asked about time",
+      "name": "answers a time question without calling a tool",
       "input": "What time is it right now?",
-      "expectedTool": "getCurrentTime",
+      "expectedTool": null,
       "expectedKeywords": []
     },
     {
