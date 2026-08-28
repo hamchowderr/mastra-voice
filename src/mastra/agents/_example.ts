@@ -103,8 +103,20 @@ Ending the call:
   scorers: {
     answerRelevancy: {
       scorer: answerRelevancyScorer,
-      // Under AIMock the scorer hits OpenAI /v1/responses which has no fixtures — disable it.
-      sampling: { type: 'ratio', rate: env.USE_AIMOCK ? 0 : 1 },
+      // Sampled, not every turn. Mastra fires scorers WITHOUT awaiting them, so
+      // this never delays a reply — but on a phone line `rate: 1` still means one
+      // extra gpt-4o-mini call per turn, billed and logged, for a signal that a
+      // fraction of turns gives just as well.
+      //
+      // Rate 0 when there is nothing to run against: under AIMock the scorer hits
+      // OpenAI's /v1/responses, which AIMock cannot match fixtures for, and with
+      // no OPENAI_API_KEY it would throw on every turn. `npm run eval` is
+      // unaffected either way — scripts/eval.ts calls the scorer directly rather
+      // than through this sampling config.
+      sampling: {
+        type: 'ratio',
+        rate: env.USE_AIMOCK || !env.OPENAI_API_KEY ? 0 : 0.2,
+      },
     },
   },
 });
