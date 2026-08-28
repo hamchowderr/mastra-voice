@@ -77,7 +77,14 @@ WORKDIR /app
 
 # tini — proper signal handling for SIGTERM
 # node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (onnxruntime, sharp)
-RUN apt-get update && apt-get install -y --no-install-recommends tini wget && rm -rf /var/lib/apt/lists/*
+#
+# ca-certificates is NOT optional here, and its absence is invisible until a call
+# arrives. Node carries its own bundled CA store, so npm, the Anthropic API and
+# the model download all work without it — but @livekit/rtc-node is Rust and
+# reads the OS trust store, so `ctx.connect()` dies with
+# `no native root CA certificates found` and the caller waits in silence while
+# the worker keeps reporting itself healthy. node:22-slim ships without it.
+RUN apt-get update && apt-get install -y --no-install-recommends tini wget ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # `-m` (create the home directory), NOT `-M`. @livekit/agents' download-files
 # writes the turn-detector model under $HOME and ignores HF_HOME for that step,
