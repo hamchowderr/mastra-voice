@@ -56,7 +56,30 @@ RUN node scripts/bake-studio.mjs
 # the standalone CLI only downloads for plugins it can register, so if it fetches
 # nothing the worker pulls the model once on first cold start (then it's cached).
 ENV HF_HOME=/app/.cache/huggingface
-RUN mkdir -p "$HF_HOME" && (npx livekit-agents download-files || echo "download-files: nothing baked — worker will fetch on first cold start")
+# HOME is overridden for this step on purpose. The turn-detector downloader
+# ignores HF_HOME and writes to $HOME/.cache/huggingface. With the default
+# HOME=/root the model lands in /root, which is never copied into the runtime
+# stage, so the image registers a worker that cannot serve a call. HOME=/app
+# makes that path resolve to exactly HF_HOME (/app/.cache/huggingface), which IS
+# copied — do not set it to /app/.cache or the path doubles to .cache/.cache.
+RUN mkdir -p "$HF_HOME" && \
+    (HOME=/app npx livekit-agents download-files || \
+     echo "download-files: nothing baked — worker will fetch on first cold start")
+
+# Bake the fastembed embedding model (~133MB) the same way. Memory's semantic
+# recall embeds on every turn, so without it the FIRST call downloads it mid-call
+# — and that first embed loses the race against its own download, failing with
+# `Tokenizer file not found at .../fast-bge-small-en-v1.5/tokenizer.json`. It
+# lands in /app/.cache/mastra, which the runtime stage copies alongside the
+# LiveKit models. NO `|| true` here: a swallowed failure is what ships a broken
+# image, so let the build fail instead.
+#
+# HOME=/app for the same reason as the step above — fastembed resolves its cache
+# as `os.homedir()/.cache/mastra/fastembed-models`, so with the default
+# HOME=/root the model lands outside the tree the runtime stage copies and the
+# build "succeeds" having baked nothing.
+RUN HOME=/app node --input-type=module -e "const { warmup } = await import('@mastra/fastembed'); await warmup();" && \
+    test -f /app/.cache/mastra/fastembed-models/fast-bge-small-en-v1.5/tokenizer.json
 
 # Drop devDependencies (mastra CLI, typescript, types) AFTER the build: the runtime
 # server runs the built bundle and the worker runs from source via tsx (a PRODUCTION
@@ -79,6 +102,11 @@ RUN npm prune --omit=dev
 #
 # linux/arm64 is deliberately kept so this same Dockerfile still produces a
 # working image when built for arm64.
+#
+# These are the only two paths worth deleting because `overrides` in package.json
+# holds onnxruntime-node to ONE version, so npm hoists a single copy per tree. If
+# that pin is ever dropped, a nested copy reappears (under @mastra/fastembed) and
+# this step silently stops covering it — which matters for far more than size.
 RUN rm -rf       node_modules/onnxruntime-node/bin/napi-v6/darwin       node_modules/onnxruntime-node/bin/napi-v6/win32       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/darwin       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/win32
 
 # ─── Stage 2: runtime ─────────────────────────────────────────────
@@ -87,11 +115,25 @@ WORKDIR /app
 
 # tini — proper signal handling for SIGTERM
 # node:22-slim is Debian-based (glibc), so no gcompat needed for native modules (onnxruntime, sharp)
-RUN apt-get update && apt-get install -y --no-install-recommends tini wget && rm -rf /var/lib/apt/lists/*
+#
+# ca-certificates is NOT optional here, and its absence is invisible until a call
+# arrives. Node carries its own bundled CA store, so npm, the Anthropic API and
+# the model download all work without it — but @livekit/rtc-node is Rust and
+# reads the OS trust store, so `ctx.connect()` dies with
+# `no native root CA certificates found` and the caller waits in silence while
+# the worker keeps reporting itself healthy. node:22-slim ships without it.
+RUN apt-get update && apt-get install -y --no-install-recommends tini wget ca-certificates && rm -rf /var/lib/apt/lists/*
 
+# `-m` (create the home directory), NOT `-M`. @livekit/agents' download-files
+# writes the turn-detector model under $HOME and ignores HF_HOME for that step,
+# so a user with no home directory fails with
+# `EACCES: permission denied, mkdir '/home/mastra'`. That failure is swallowed by
+# the `|| echo` on the bake step above, so the image builds green and ships
+# without the model; the worker then refetches it on the first cold start, on the
+# caller's clock, and needs network egress to do it.
 RUN groupadd -g 1001 nodejs && \
-    useradd -u 1001 -g nodejs -s /bin/sh -M mastra && \
-    chown -R mastra:nodejs /app
+    useradd -u 1001 -g nodejs -s /bin/sh -m -d /home/mastra mastra && \
+    chown -R mastra:nodejs /app /home/mastra
 
 ENV NODE_ENV=production
 ENV PORT=4111
@@ -100,6 +142,10 @@ ENV PORT=4111
 ENV MASTRA_STUDIO_PATH=/app/.mastra/output/studio
 # Where the baked turn-detector model lives (must match the build stage).
 ENV HF_HOME=/app/.cache/huggingface
+# Must match the HOME used for the bake above: the downloader resolves
+# $HOME/.cache/huggingface, so HOME=/app lands on HF_HOME. A cold-start refetch
+# needs this writable too.
+ENV HOME=/app
 
 # Server bundle — the self-contained Mastra HTTP service (default CMD).
 COPY --from=build --chown=mastra:nodejs /app/.mastra/output ./.mastra/output

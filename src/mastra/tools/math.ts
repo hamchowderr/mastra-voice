@@ -1,35 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 
-export const getCurrentTime = createTool({
-  id: 'getCurrentTime',
-  description: "Get the current date and time in the user's local timezone",
-  inputSchema: z.object({
-    timezone: z
-      .string()
-      .optional()
-      .describe('IANA timezone (e.g. "America/Los_Angeles"). Optional; defaults to system timezone.'),
-  }),
-  outputSchema: z.object({
-    iso: z.string(),
-    formatted: z.string(),
-    timezone: z.string(),
-  }),
-  execute: async ({ timezone }) => {
-    const tz = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const now = new Date();
-    return {
-      iso: now.toISOString(),
-      formatted: now.toLocaleString('en-US', {
-        timeZone: tz,
-        dateStyle: 'full',
-        timeStyle: 'long',
-      }),
-      timezone: tz,
-    };
-  },
-});
-
 export const evaluateMath = createTool({
   id: 'evaluateMath',
   description: 'Safely evaluate a simple math expression. Supports +, -, *, /, parentheses.',

@@ -33,6 +33,11 @@ services:
     env_file:
       - .env
     environment:
+      # The agent's instructions bake in the current date and time from the
+      # container clock, and container clocks are UTC — so an agent answering a US
+      # phone line will confidently say the wrong DAY for most of the evening.
+      # Set TZ to the timezone the business actually operates in.
+      - TZ=${TZ:-UTC}
       - NODE_ENV=production
       # Mastra memory + RAG → the postgres service (private, internal network)
       - SUPABASE_DB_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
@@ -80,6 +85,11 @@ services:
     env_file:
       - .env
     environment:
+      # The agent's instructions bake in the current date and time from the
+      # container clock, and container clocks are UTC — so an agent answering a US
+      # phone line will confidently say the wrong DAY for most of the evening.
+      # Set TZ to the timezone the business actually operates in.
+      - TZ=${TZ:-UTC}
       - NODE_ENV=production
       # Same stores as the server — both processes write concurrently (Postgres
       # handles that; a single-writer store would not).
@@ -94,9 +104,26 @@ services:
         condition: service_healthy
       dolt:
         condition: service_healthy
-    # No HTTP endpoint to probe — disable the image's server healthcheck here.
+    # The worker does have an HTTP endpoint, just not the server's: @livekit/agents
+    # serves a health check on 8081 (`/` → 200 healthy, 503 unhealthy). Probe that
+    # instead of the image's :4111/health, which this container never serves.
+    #
+    # It reports 503 for `inference process not running` (voice-a97), and that is
+    # the failure worth catching: the shared inference process hosts the turn
+    # detector, and when it is killed nothing restarts it — so end-of-turn stops
+    # being detected and EVERY later call sits in silence while the worker happily
+    # keeps registering and accepting jobs. Nothing else surfaces that state.
+    #
+    # NOTE: plain `docker compose` marks the container unhealthy but will NOT
+    # restart it — `restart: unless-stopped` only reacts to the process exiting.
+    # Acting on health needs an orchestrator that does (Swarm, Kubernetes, ECS,
+    # Coolify) or a watchdog. Probing is still the prerequisite for all of them.
     healthcheck:
-      disable: true
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     deploy:
       resources:
         limits:

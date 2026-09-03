@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "livekit-agents": {
+      "source": "livekit/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/livekit-agents/SKILL.md",
+      "computedHash": "d709ee665f549428810436f97309bfcee237f5ce7801f4c0eecaf6445085f48a"
+    },
+    "livekit-simulations": {
+      "source": "livekit/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/livekit-simulations/SKILL.md",
+      "computedHash": "984035076165e1b61c014a7c9c0c6fab001cc7ed13613b9537a26aa6c9942997"
+    },
+    "mastra": {
+      "source": "mastra-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/mastra/SKILL.md",
+      "computedHash": "fb441925625ae056b2d7d76c736c357c57e62901ee75d3da4dcf2feb19c635c9"
+    }
+  }
+}

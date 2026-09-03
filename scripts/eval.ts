@@ -88,6 +88,24 @@ for (const evalCase of dataset.cases) {
 
     responseText = result.text ?? '';
 
+    // When a turn ends ON a tool call — which `stopWhen: stopOnToolCall('endCall')`
+    // guarantees for the farewell turn — `result.text` and `step.text` both come back
+    // empty even though the model DID emit spoken text alongside the tool call. The
+    // text is still there, as a text block on the assistant message. Verified against
+    // AIMock: the provider returns [text, tool_use], the stream path emits the text
+    // fine, only the aggregated `.text` drops it. Recover it so a keyword assertion on
+    // a farewell turn tests the agent rather than this quirk.
+    if (!responseText) {
+      const blocks: string[] = [];
+      for (const msg of ((result as any).response?.messages ?? [])) {
+        if (msg.role !== 'assistant') continue;
+        for (const part of (Array.isArray(msg.content) ? msg.content : [])) {
+          if (part?.type === 'text' && typeof part.text === 'string') blocks.push(part.text);
+        }
+      }
+      responseText = blocks.join(' ').trim();
+    }
+
     // Tool calls: read from the authoritative top-level result.toolCalls first;
     // fall back to walking steps for older cores. toolName lives at
     // tc.payload.toolName (newer) or tc.toolName (older).
