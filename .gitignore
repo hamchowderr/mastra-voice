@@ -30,3 +30,9 @@ prompts/
 
 # Built simulation config — authored.yaml and risks.yaml are the sources
 simulations/scenarios.yaml
+
+# Written by `lk agent create` / `lk agent config`. It carries YOUR LiveKit Cloud
+# project subdomain and the agent id that project minted, so a committed copy
+# points every clone at an agent it has no access to. Regenerate it instead:
+# `lk agent config --id <CA_...>`.
+livekit.toml

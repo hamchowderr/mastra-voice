@@ -25,7 +25,7 @@ at runtime.
 
 - **Model bakes run with `HOME=/app`.** Both the LiveKit turn detector and
   fastembed resolve their cache from `os.homedir()`, ignoring `HF_HOME`. Under
-  the default `HOME=/root` they write outside the tree the runtime stage copies,
+  the default `HOME=/root` they write outside the tree the runtime stages copy,
   so the build bakes nothing and says nothing. Each bake is followed by a
   `test -f` for exactly that reason — never wrap one in `|| true`.
 - **`ca-certificates` is required.** Node carries its own CA bundle, so npm, the
@@ -40,3 +40,35 @@ at runtime.
 
 The `worker` service probes `:8081`, the worker's own health endpoint — not the
 server's `:4111/health`, which that container never serves.
+
+## Two leaf stages, and `target` is load-bearing
+
+One Dockerfile, two images. `runtime-base` carries the Debian base, tini, the
+non-root user, and the fastembed model — the only payload both processes read.
+Each leaf then copies **only the runtime it executes**:
+
+| Stage | Carries | Runs |
+| --- | --- | --- |
+| `agent` | `node_modules`, `src`, manifests, the turn-detector model | the LiveKit worker |
+| `runtime` (default) | `.mastra/output` | the Mastra HTTP server |
+
+Consequences, all of which have bitten before in the single-image form:
+
+- **Never give a compose service the wrong `target`, and never omit it.** It is
+  not a safety net any more, it decides what is in the image. A service on
+  `runtime` cannot start the worker (no `src/`), and one on `agent` cannot start
+  the server (no `.mastra/output`).
+- **Never re-add a `command:` override to the `worker` service.** The `agent`
+  stage's own `CMD` is the worker, deliberately: LiveKit Cloud Agents runs one
+  process per container and cannot override a command, so the image has to be
+  correct on its own. Compose using the same image is what keeps CI honest about
+  that.
+- **Never move a leaf's `COPY` up into `runtime-base` to "share a layer".** That
+  is what put ~600 MB of server bundle in the worker image and ~841 MB of worker
+  tree plus the 441 MB turn detector in the server image. Sharing costs nothing
+  here — a host running both pulls the same bytes either way.
+- **`HF_HOME` belongs to `agent`, `MASTRA_STUDIO_PATH` to `runtime`.** Each names
+  a directory only that stage carries. Setting either in the base makes the env
+  point at nothing in the other image.
+- **`runtime` stays the LAST stage** so a bare `docker build .` still produces the
+  server. CI and compose name their target explicitly regardless.

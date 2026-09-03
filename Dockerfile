@@ -109,8 +109,10 @@ RUN npm prune --omit=dev
 # this step silently stops covering it — which matters for far more than size.
 RUN rm -rf       node_modules/onnxruntime-node/bin/napi-v6/darwin       node_modules/onnxruntime-node/bin/napi-v6/win32       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/darwin       .mastra/output/node_modules/onnxruntime-node/bin/napi-v6/win32
 
-# ─── Stage 2: runtime ─────────────────────────────────────────────
-FROM node:22-slim AS runtime
+# ─── Stage 2: runtime base ────────────────────────────────────────
+# Everything both leaf stages need. It sets no CMD of its own — the two stages
+# below are identical images that differ only in which process they start.
+FROM node:22-slim AS runtime-base
 WORKDIR /app
 
 # tini — proper signal handling for SIGTERM
@@ -137,36 +139,83 @@ RUN groupadd -g 1001 nodejs && \
 
 ENV NODE_ENV=production
 ENV PORT=4111
-# Serve the bundled Studio UI (chat, traces, editor) from the same server.
-# Secure it behind auth before exposing publicly (see Mastra Studio auth docs).
-ENV MASTRA_STUDIO_PATH=/app/.mastra/output/studio
-# Where the baked turn-detector model lives (must match the build stage).
-ENV HF_HOME=/app/.cache/huggingface
-# Must match the HOME used for the bake above: the downloader resolves
-# $HOME/.cache/huggingface, so HOME=/app lands on HF_HOME. A cold-start refetch
-# needs this writable too.
+# Shared by both processes: fastembed resolves its model cache as
+# `os.homedir()/.cache/mastra/fastembed-models`, so HOME must match the HOME used
+# for the bake in the build stage. A cold-start refetch needs it writable too.
+# MASTRA_STUDIO_PATH and HF_HOME are NOT here — each points into a directory only
+# one leaf stage carries, so they are set there.
 ENV HOME=/app
 
-# Server bundle — the self-contained Mastra HTTP service (default CMD).
-COPY --from=build --chown=mastra:nodejs /app/.mastra/output ./.mastra/output
-# Worker runtime — the LiveKit worker runs from SOURCE via tsx (deliberately NOT
-# bundled: bundling would drag in LiveKit's native deps). It needs the production
-# node_modules, the source tree, and the manifest/tsconfig.
+# Baked fastembed model (~133MB tree) — the ONLY payload both processes need, so
+# it lives here as one shared layer. Memory's semantic recall embeds on both the
+# text path and the voice path, and fastembed resolves it as
+# `os.homedir()/.cache/mastra/fastembed-models` — HOME=/app above makes that land
+# here. The turn detector is NOT here: it is worker-only and lives in the agent
+# stage. (Silero VAD is in neither; it ships inside node_modules.)
+COPY --from=build --chown=mastra:nodejs /app/.cache/mastra ./.cache/mastra
+
+USER mastra
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Each leaf stage below copies ONLY the runtime it executes. That is deliberate:
+# the two processes share nothing but the models above. The server runs a bundle
+# that carries its own node_modules and its own package.json (`"type": "module"`,
+# name "server"), so it needs nothing from the repo root; the worker runs from
+# source under tsx and never loads the bundle. Copying both into a shared base
+# put ~600 MB of server bundle in the worker image and ~840 MB of worker tree in
+# the server image, and neither could ever execute the other's half.
+
+# ─── Stage 3: agent — one container, one LiveKit worker ───────────
+# For LiveKit Cloud Agents (`lk agent create --image …`), which runs ONE process
+# per container and can't override a command the way compose does. It shares the
+# base and the baked models with the runtime stage; everything below is the
+# worker's own runtime, which the server image never carries.
+#
+# NOT the default target. `runtime` stays last so a bare `docker build .` still
+# produces the server; ask for this one with `--target agent`. Compose and CI now
+# name their target explicitly, because neither image can run the other's process
+# any more. `lk agent create` has no --target flag, which is exactly why the
+# README builds this locally and hands LiveKit the finished image.
+FROM runtime-base AS agent
+# Runs from SOURCE via tsx — deliberately NOT bundled, because bundling would drag
+# in LiveKit's native deps (onnxruntime, …). Needs the production node_modules, the
+# source tree, and the manifest/tsconfig. Does NOT need .mastra/output.
 COPY --from=build --chown=mastra:nodejs /app/node_modules ./node_modules
 COPY --from=build --chown=mastra:nodejs /app/src ./src
 COPY --from=build --chown=mastra:nodejs /app/package.json ./package.json
 COPY --from=build --chown=mastra:nodejs /app/tsconfig.json ./tsconfig.json
-# Baked LiveKit model files (turn-detector). Silero VAD already lives in node_modules.
-COPY --from=build --chown=mastra:nodejs /app/.cache ./.cache
+# Where the baked turn-detector model lives (must match the build stage). The
+# downloader resolves $HOME/.cache/huggingface, which HOME=/app makes identical.
+ENV HF_HOME=/app/.cache/huggingface
+# The baked turn-detector model (~441MB), resolved through HF_HOME. It belongs to
+# THIS stage alone: end-of-turn detection runs only in the worker, and the server
+# never constructs a TurnDetector because nothing it loads imports voice-worker.ts.
+# Shipping it to the server would be 441MB that can never be read.
+COPY --from=build --chown=mastra:nodejs /app/.cache/huggingface ./.cache/huggingface
+# @livekit/agents serves its health endpoint on 8081 in production mode (`start`),
+# never on 4111 — so the inherited server healthcheck would fail forever. Replace
+# it. 503 here means `inference process not running`: the shared turn-detector
+# subprocess died and every later call will sit in silence. See README
+# "Known limitations".
+EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget -qO- http://localhost:8081/ > /dev/null 2>&1 || exit 1
+CMD ["node", "--import", "tsx", "src/mastra/voice-worker.ts", "start"]
 
-USER mastra
+# ─── Stage 4: runtime — the DEFAULT target ────────────────────────
+# Last stage on purpose: it is what `docker build` produces with no --target.
+FROM runtime-base AS runtime
+# Serve the bundled Studio UI (chat, traces, editor) from the same server.
+# Secure it behind auth before exposing publicly (see Mastra Studio auth docs).
+ENV MASTRA_STUDIO_PATH=/app/.mastra/output/studio
+# The self-contained Mastra HTTP service. `mastra build` emits its own
+# node_modules, package.json and lockfile in here, so this single COPY is the
+# whole server — no repo-root node_modules, no src, no tsconfig.
+COPY --from=build --chown=mastra:nodejs /app/.mastra/output ./.mastra/output
 EXPOSE 4111
-
-# Server-only healthcheck (the worker has no HTTP port; its compose service disables it).
+# Server-only healthcheck (the worker has no HTTP port; its compose service overrides it).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:4111/health > /dev/null 2>&1 || exit 1
-
-ENTRYPOINT ["/usr/bin/tini", "--"]
 # Default service = Mastra HTTP server. The `worker` service in docker-compose.yml
 # overrides this with:  node --import tsx src/mastra/voice-worker.ts start
 CMD ["node", ".mastra/output/index.mjs"]
