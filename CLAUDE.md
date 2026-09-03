@@ -53,16 +53,17 @@ mock, a hardcoded value, or a `try`/`catch`.
 
 ## Verify before calling anything done
 
-Three commands, cheapest first:
+Four commands, cheapest first:
 
 ```bash
 npm run typecheck    # tsc --noEmit
-npm test             # vitest. No Docker, no DB, no API key. ~1s
+npm test             # vitest, incl. the harness tier. No Docker, no DB, no key. ~6s
+npm run test:harness # just the harness tier: headless voice.AgentSession, no infra
 npm run eval         # all eval cases in text mode; exits 0 on pass, 1 on fail
 ```
 
-Run `typecheck` and `test` after a series of edits — together they take a couple
-of seconds and need no infrastructure. An agent must pass typecheck before being
+Run `typecheck` and `test` after a series of edits — together they take a few
+seconds and need no infrastructure. An agent must pass typecheck before being
 registered in `src/mastra/index.ts`.
 
 `npm run eval` is the slow gate: it needs Postgres running and either a real API

@@ -303,13 +303,15 @@ Stop and confirm with the user before making these changes:
 ```bash
 npm run dev          # Start Studio at localhost:4111 (text mode)
 npm run typecheck    # Verify types before running
-npm test             # Unit tests (vitest). No Docker, no DB, no API key. ~1s
+npm test             # Unit + harness tiers (vitest). No Docker, no DB, no key. ~6s
+npm run test:harness # Just the harness tier: headless voice.AgentSession, no infra
 npm run eval         # Run all eval cases in text mode; exits 0 on pass, 1 on fail
 npx supabase start   # Start local Supabase (Docker required)
 ```
 
 `npm test` is the fast gate — run it after any edit. `npm run eval` is the slow
 one: it needs Postgres and either an API key or AIMock, so it is the gate to run
-before shipping, not between edits.
+before shipping, not between edits. Every other surface — audio, simulations,
+load, the compliance ledger — is mapped in [`docs/testing.md`](docs/testing.md).
 
 Eval runs with `USE_AIMOCK=false` hit the real Anthropic API and incur cost. Use `USE_AIMOCK=true` with AIMock running for free deterministic runs during development.

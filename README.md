@@ -259,106 +259,127 @@ Either way there is **no Mastra Platform account** involved — the model is cal
 
 > **If you switch to an AI SDK instance yourself, keep it a function.** `createAnthropic()` captures its base URL when constructed, and agents are built at import time — before `configureAIMock()` rewrites it. A module-scope singleton bakes in the real endpoint, and evals bill your provider instead of hitting the mock. Mastra resolves a factory per request, which is late enough. See the comment in `lib/model.ts`.
 
-Self-hosting the LiveKit server does not move STT/TTS — the inference endpoint is derived independently of `LIVEKIT_URL`. To relocate it, set `LIVEKIT_INFERENCE_URL`, or pass plugin instances instead of model strings (`stt: new deepgram.STT({...})`) using your own provider accounts.
+Self-hosting the LiveKit server does not move STT/TTS — the inference endpoint is derived independently of `LIVEKIT_URL`. Setting `LIVEKIT_INFERENCE_URL` relocates the gateway; leaving it entirely means passing plugin instances instead of model strings, below.
 
 The Dolt ledger records that consent was captured. It does not constrain where audio was processed.
+
+### Bring your own STT and TTS
+
+Inference is the right default for a first run — one credential, no extra accounts, and you can hear the agent minutes after cloning. It is also metered on LiveKit credits, per second of audio transcribed and per character synthesized, so on real call volume it is the line item that grows fastest. Bringing your own accounts moves that spend onto contracts you negotiate directly, and reaches providers the gateway doesn't carry.
+
+The worker takes either form in the same slot: `@mastra/livekit` types `stt` and `tts` as `voice.AgentSessionOptions['stt' | 'tts']` — *a LiveKit plugin instance or an inference model string*. Two packages and two lines, not a fork.
+
+```bash
+# Track the @livekit/agents version already in package.json — the plugins ship
+# on the same release line (1.7.x today) and are versioned together.
+npm install @livekit/agents-plugin-deepgram@^1.7.1 @livekit/agents-plugin-cartesia@^1.7.1
+```
+
+```ts
+// src/mastra/voice-worker.ts
+import * as cartesia from '@livekit/agents-plugin-cartesia';
+import * as deepgram from '@livekit/agents-plugin-deepgram';
+
+export default createLiveKitWorker({
+  // …
+  // Replaces:  stt: 'deepgram/nova-3',  tts: 'cartesia/sonic-3'
+  stt: new deepgram.STT({ model: 'nova-3', language: 'en-US' }),
+  tts: new cartesia.TTS({ model: 'sonic-3', voice: 'your-cartesia-voice-id' }),
+});
+```
+
+`nova-3` and `sonic-3` are those plugins' own defaults, so this reaches the same two models the Inference strings resolved to — the route and the bill change, the voice does not. Each plugin reads its own key from the environment (`DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`) unless you pass `apiKey`, and both are listed commented-out in `.env.example`. **The app never reads them**, so `src/lib/env.ts` doesn't require them and a missing key surfaces at call setup rather than at boot — promote them into that schema once BYO is your permanent path. Every provider ships as `@livekit/agents-plugin-<name>` on the same version line: ElevenLabs, OpenAI, AssemblyAI, and the rest.
+
+**Per-tenant or per-language selection belongs on the resolvers, not here.** `configuration.stt` and `configuration.tts` each take a function invoked once per call, after connect, with the call context — return anything the top-level option accepts, or `undefined` to fall through to it. The resolver wins when both are set.
+
+```ts
+// Module scope: one instance per locale, built once at import — NOT per call.
+const sttByLocale = new Map([['nl', new deepgram.STT({ model: 'nova-3', language: 'nl' })]]);
+
+// …inside createLiveKitWorker:
+configuration: {
+  // Dutch callers get a Dutch transcriber; every other call returns undefined
+  // and falls through to the top-level `stt`. `metadata.requestContext` carries
+  // whatever the dispatch rule put in the job metadata, so that is the routing
+  // signal — dialed number, tenant id, locale, whatever you set.
+  stt: ({ metadata }) => sttByLocale.get(String(metadata.requestContext?.locale)),
+},
+```
+
+It runs on the call-setup path, before the caller hears anything, so keep it to a lookup. Constructing a plugin inside the resolver puts that work on every call's clock.
+
+**One leg does not swap.** `turnDetection` still runs on LiveKit's inference gateway on your `LIVEKIT_*` credentials, whatever you do with STT and TTS, and the local alternative is not reachable from a module-scope instance. Swapping both providers therefore reduces your Inference spend to the per-turn detector call rather than eliminating it — **Known limitations** below has why, and why omitting `version` makes it worse rather than better.
 
 ---
 
 ## 🧪 Build & test
 
-Testing here comes in three tiers that cover genuinely different things. The first is text only — it checks what the agent *says and decides*. The second can drive the real audio pipeline. The third is you, on the phone, and nothing replaces it.
+A text agent has one thing that can be wrong: what it says. A voice agent can say
+the right words and still cut the caller off, answer four seconds late, talk over
+an interruption, or connect to silence because nothing was registered to take the
+call. No single surface catches all of that.
 
-| Tier | Exercises | Covers audio? | Runs where |
-| --- | --- | --- | --- |
-| 0. Unit tests | Pure logic — memory scoping, consent, tool guards | No | Anywhere, ~1s |
-| 1. Eval gate | Reply content, tool calls, scorers | No | CI, every PR |
-| 2. Agent simulations | Multi-turn conversation vs. a simulated caller | Yes, in audio mode | LiveKit Cloud, on demand |
-| 3. Real call | Barge-in, turn-taking, disclosure timing | **Yes** | Your ears |
+**[`docs/testing.md`](docs/testing.md) is the full map** — every surface, what it
+proves, what it cannot prove, and what none of them cover. This is the short form.
 
-### 0️⃣ Unit tests — no infrastructure at all
+| You want to know | Reach for | Cost |
+| --- | --- | --- |
+| Did I break a type? | `npm run typecheck` | free, seconds |
+| Does the security-critical logic hold? | `npm test` | free, ~1s |
+| Are the tools registered with the right schema? | `npm run test:harness` | free, ~5s |
+| Does it answer a known question correctly? | `npm run eval` | **billed** — free under AIMock |
+| Does the audio loop work? | `lk agent console` | inference minutes |
+| Is the worker being dispatched at all? | `lk dispatch create` | negligible |
+| Does it survive an awkward caller? | `lk agent simulate` | inference + judge |
+| How many concurrent calls fit? | `lk perf agent-load-test` | inference × rooms |
+| Did the compliance trail get written? | query the Dolt ledger | free |
+| Does it *sound* right? | call it yourself | your time |
+
+The first three need nothing running and take under ten seconds together — run
+them on every edit:
 
 ```bash
+npm run typecheck    # tsc --noEmit
 npm test             # vitest. No Docker, no database, no API key
-```
-
-These cover the logic that must hold regardless of what any model says: that a voice call's memory scope comes from the verified JWT and **never** from the request body (the guard against reading another caller's memory), that consent is deny-by-default and doesn't leak between callers, and that `evaluateMath`'s character allowlist holds — it builds a `new Function` from caller input, so that check is the only thing standing between a caller and arbitrary code.
-
-They need nothing running, so there's no reason not to run them on every edit.
-
-### 1️⃣ Eval gate — automated, runs in CI
-
-```bash
-npm run typecheck    # tsc --noEmit, covers src/ and scripts/
-npm run eval         # agent eval gate against the example dataset
+npm run test:harness # headless voice.AgentSession. No infrastructure at all
 npm run build        # mastra build → .mastra/output
-npm run score:list   # list registered scorers
 ```
 
-Evals run against a real provider by default, or deterministically against [AIMock](https://aimock.copilotkit.dev) with no API spend:
+`npm run eval` is the slow gate. **It hits the real Anthropic API and bills the
+key in `.env`**, because `USE_AIMOCK` defaults to `false`, and it needs Postgres
+running. For a free deterministic run:
 
 ```bash
 npx -y -p @copilotkit/aimock aimock -c aimock.json   # terminal 1
 USE_AIMOCK=true npm run eval                         # terminal 2
 ```
 
-CI runs four jobs on every PR: **typecheck** (which also runs the unit tests above), **eval**, **build**, and **docker** — where the image is built *and both containers are started*, so a broken entrypoint fails CI instead of a deploy.
+CI runs five jobs on every PR: **harness** (no infrastructure at all),
+**typecheck** (which also runs `npm test`), **eval**, **build**, and **docker** —
+where *both* images are built and *both* containers are started from their own
+image, so a broken entrypoint fails CI instead of a deploy.
 
-Each case is one fixed input with asserted tool calls and scorer output. That makes it a regression gate: it catches a change breaking something you already knew to check.
+### What automation still can't reach
 
-### 2️⃣ Agent simulations — a scripted caller, in text or in audio
+Nothing above hears prosody. An audio simulation scores a *transcript*, so it can
+catch a dropped turn or a guardrail miss, but not that the agent sounded rushed or
+that a pause felt like a hang-up. AIMock's WebSocket support is text-frames-only,
+and the `voice.testing` harness takes a string and skips the audio path — both
+mock the *model*, not the microphone.
 
-LiveKit plays a scripted *caller persona* against the agent over a full conversation and has an LLM judge grade the result. Where the eval gate asserts known inputs, this surfaces the failures you didn't think to assert — a caller who withholds a required field, supplies an invalid one, or pushes at a guardrail.
-
-The bundled `livekit-simulations` skill writes the scenario file locally from the agent's own code (nothing is uploaded) and enforces at least one scenario per identified risk.
-
-```bash
-lk agent simulate --scenarios scenarios.yaml src/mastra/voice-worker.ts         # text
-lk agent simulate audio --scenarios scenarios.yaml src/mastra/voice-worker.ts   # full audio pipeline
-```
-
-**Audio mode drives the real STT→LLM→TTS path** with a simulated voice user, and can degrade the caller's audio on purpose:
-
-| Flag | Simulates |
-| --- | --- |
-| `--background-noise` | Ambient noise mixed into the caller's audio |
-| `--low-quality-microphone` | A poor microphone |
-| `--packet-loss` | Dropped packets on the caller's track |
-
-Requirements — a public beta with no waitlist and nothing to request access to:
-
-| Requirement | Needed |
-| --- | --- |
-| LiveKit CLI | v2.16.7+ for Node.js agents (`winget upgrade LiveKit.LiveKitCLI`) |
-| `@livekit/agents` | 1.6.0+ |
-| LiveKit Cloud project | yes — runs execute on Cloud |
-
-**The worker needs no changes to take part.** A simulation arrives as an ordinary job carrying an `lk.simulator.dispatch` attribute; `ctx.simulationContext()` returns `undefined` on a normal call, so the same worker serves both. The one thing `@mastra/livekit` does not expose is the optional `onSimulationEnd` veto, which would let your own checks fail a run the judge passed — the judge's own verdict still stands without it.
-
-> Note the [LiveKit docs](https://docs.livekit.io/agents/start/testing/simulations/) still say audio mode "isn't available yet". The CLI ships it, `SIMULATION_MODE_AUDIO` is in the protocol, and the SDK parses it — the docs are behind. Whether Cloud accepts an audio run for a given project is worth confirming with one run before relying on it.
-
-### 3️⃣ The real call — what a simulation still can't tell you
-
-Audio simulations narrow this list; they don't empty it. The judge scores a *transcript*, so it can catch a dropped turn or a guardrail miss, but it cannot tell you the agent sounded right. Nothing automated hears prosody, or judges whether a pause felt like a hang-up.
-
-So before shipping, place a real call and verify:
-
-- The disclosure plays without being interruptible
-- Turn detection doesn't cut you off mid-thought
-- Barge-in stops generation
-- The tool filler speaks while a tool runs
-- Consent captures
-- The agent's hang-up signs off cleanly
-- The thread transcript matches what you actually heard
-
-The eval gate cannot reach any of this either: AIMock's WebSocket support is text-frames-only, and LiveKit's `voice.testing` harness takes a string and skips the audio path. Both mock the *model*, not the microphone.
+So before shipping, place a real call and verify the disclosure plays
+uninterruptibly, barge-in stops generation, a mid-thought pause isn't treated as
+end-of-turn, consent captures, and the hang-up signs off cleanly.
+[`docs/testing.md`](docs/testing.md#8-does-it-sound-right) has the full checklist.
 
 ---
 
 ## 🐳 Docker
 
+There are two deploy targets, and this is the default one: you run every process, including the databases. [LiveKit Cloud Agents](#-livekit-cloud-agents) is the alternative — LiveKit runs the worker container and you run the rest.
+
 ```bash
-docker compose build                      # one image, both services
+docker compose build                      # two images: server + worker
 docker compose up -d                      # server + worker + postgres + dolt
 curl http://localhost:4111/health         # server only — the worker has no HTTP port
 ```
