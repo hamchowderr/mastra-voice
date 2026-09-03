@@ -185,16 +185,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build Docker image
+      # TWO images, not one. Each stage carries only the runtime it executes — the
+      # server stage has no `src/`, the agent stage has no `.mastra/output` — so a
+      # single image can no longer be started with an overridden command. Both must
+      # build, and each is smoke-tested against its own.
+      - name: Build server image
         uses: docker/build-push-action@v5
         with:
           context: .
+          target: runtime
           push: false
           # load into the local daemon so the smoke test below can actually run it
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: mastra:ci-${{ github.sha }}
+
+      # Shares every layer up to and including the baked models, so this costs
+      # roughly the worker's node_modules and nothing else.
+      - name: Build worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: agent
+          push: false
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: mastra-worker:ci-${{ github.sha }}
 
       # voice-9jm.26 — building the image only proves it COMPILES. A broken CMD,
       # a missing runtime dep, or a bad tsx/loader path passes the build and then
@@ -224,14 +242,15 @@ jobs:
           docker logs smoke-server
           exit 1
 
-      # The worker has no HTTP port, so there is nothing to poll. Stub LiveKit
-      # creds mean it CANNOT authenticate — that is expected and is not what is
-      # being tested. What is tested: the entrypoint resolves, tsx loads the
-      # TypeScript source, and the process reaches LiveKit connection logic
+      # No command override — the agent image's own CMD is the worker, which is
+      # exactly what needs proving, since LiveKit Cloud Agents cannot override one.
+      # Stub LiveKit creds mean it CANNOT authenticate; that is expected and is not
+      # what is being tested. What is tested: the image's CMD resolves, tsx loads
+      # the TypeScript source, and the process reaches LiveKit connection logic
       # instead of dying on a missing module or a bad path.
       - name: Smoke test — worker entrypoint boots
         run: |
-          docker run -d --name smoke-worker             --network host             -e MASTRA_TELEMETRY_DISABLED=1             -e APP_SECRET=smoke_test_stub_smoke_test_stub_32             -e SUPABASE_URL=https://stub.supabase.co             -e SUPABASE_ANON_KEY=stub             -e SUPABASE_SERVICE_ROLE_KEY=stub             -e SUPABASE_DB_URL=postgres://postgres:postgres@127.0.0.1:5432/mastra             -e ANTHROPIC_API_KEY=stub             -e LIVEKIT_URL=wss://stub.livekit.cloud             -e LIVEKIT_API_KEY=stub             -e LIVEKIT_API_SECRET=stub             mastra:ci-${{ github.sha }}             node --import tsx src/mastra/voice-worker.ts start
+          docker run -d --name smoke-worker             --network host             -e MASTRA_TELEMETRY_DISABLED=1             -e APP_SECRET=smoke_test_stub_smoke_test_stub_32             -e SUPABASE_URL=https://stub.supabase.co             -e SUPABASE_ANON_KEY=stub             -e SUPABASE_SERVICE_ROLE_KEY=stub             -e SUPABASE_DB_URL=postgres://postgres:postgres@127.0.0.1:5432/mastra             -e ANTHROPIC_API_KEY=stub             -e LIVEKIT_URL=wss://stub.livekit.cloud             -e LIVEKIT_API_KEY=stub             -e LIVEKIT_API_SECRET=stub             mastra-worker:ci-${{ github.sha }}
 
           sleep 25
           docker logs smoke-worker > worker.log 2>&1

@@ -226,7 +226,7 @@ Caller (phone via SIP · browser · playground)
    Mastra server (REST · A2A · MCP · Studio) → Postgres + Dolt
 ```
 
-**Two processes, one image.** The server and the worker run the same Docker image with different commands. Workers scale by call volume, the server by request volume.
+**Two processes, two images, one Dockerfile.** The server and the worker share a base and the fastembed model, then each stage copies only the runtime it executes — the server has no `src/`, the worker has no `.mastra/output`. Neither can run the other's process, which is what makes the worker image correct on its own for hosts that cannot override a command. Workers scale by call volume, the server by request volume.
 
 **The worker takes no inbound traffic.** Calls arrive at LiveKit; the worker dials *out* to register. No port, no public domain.
 
@@ -378,7 +378,18 @@ The stack is four containers. Only `mastra` is public; `worker`, `postgres`, and
 
 `node:22-slim` (Debian, glibc) is required. `node:22-alpine` (musl) breaks `onnxruntime-node`, `sharp`, and the native tokenizers — all ship glibc-linked prebuilds with no musl build.
 
-The image also carries the worker runtime (production `node_modules` + `src` + `tsx`), because the worker runs from source; bundling it would drag in LiveKit's native deps. That means `onnxruntime-node` is present **twice** — once in the server bundle `mastra build` produces, once in the worker's tree.
+The worker runs from source rather than a bundle, because bundling it would drag in LiveKit's native deps — so it needs the production `node_modules`, `src` and `tsx`, and `onnxruntime-node` therefore exists in two trees: the server bundle `mastra build` emits, and the worker's own.
+
+Both trees no longer land in one image. Each stage copies only what it runs, which keeps roughly 600 MB of server bundle out of the worker and 841 MB of worker tree plus the 441 MB turn-detector model out of the server:
+
+| Payload | Server | Worker |
+| --- | :---: | :---: |
+| `.mastra/output` (bundle + Studio) | ✅ | — |
+| `node_modules` + `src` + `tsx` | — | ✅ |
+| `.cache/mastra` (fastembed, semantic recall) | ✅ | ✅ |
+| `.cache/huggingface` (turn detector) | — | ✅ |
+
+Only the fastembed model and the Debian base are shared, so building both targets costs little more than building one, and a host running both pulls the same bytes it always did.
 
 The build prunes what can't load: `onnxruntime-node` bundles binaries for every platform inside one package, so npm's `optionalDependencies` pruning can't reach them. Removing the macOS and Windows copies saves ~199 MB per tree, ~400 MB total. `linux/arm64` is kept so the same Dockerfile still builds for arm64.
 
@@ -390,6 +401,80 @@ Cost is **RAM-dominated**: each concurrent call spins a job runner that re-impor
 
 - **Local dev** — 32 GB is comfortable, 16 GB is the floor. One call is ~5 GB on top of Docker, a browser, and your editor. Set `numIdleProcesses: 0` and run the call client on a second device so the browser's WebRTC encoding doesn't compete for CPU.
 - **Production** — budget ~1.5–2 GB RAM and 1–2 vCPU per concurrent call; a 4 vCPU / 8–16 GB instance handles several. Scale **horizontally**: LiveKit dispatches across every registered worker. Keep workers region-close to your LiveKit project.
+
+---
+
+## 🚢 LiveKit Cloud Agents
+
+The second target. LiveKit hosts the worker container itself, so the audio loop needs no host of your own — and it hosts *only* that container. There are no sidecars, so Postgres and Dolt have to become managed endpoints reachable from outside your network, and the Mastra HTTP server (REST, A2A, MCP, Studio) keeps running wherever it already runs.
+
+| | Docker Compose | LiveKit Cloud Agents |
+|---|---|---|
+| Worker process | your host | LiveKit |
+| Mastra server | your host | your host — unchanged |
+| Postgres + Dolt | containers in the same stack | managed, externally reachable |
+| Secrets | `.env`, read by compose | uploaded ahead of the container |
+| Scaling | your orchestrator | LiveKit, per region |
+| Portability | one `docker compose up`, on anything | LiveKit Cloud only |
+
+Self-hosting stays the default because it is the one that runs anywhere and keeps the four processes in one file. Cloud Agents trades that away for not operating a worker host. The commands below were checked against `lk` 2.18.3; authenticate the CLI against the project first with `lk cloud auth`.
+
+### Build the worker image
+
+The Dockerfile's default target is the **HTTP server** — what compose and CI build, and it registers no worker at all. Cloud Agents runs one process per container, so it wants the `agent` target instead, whose `CMD` is the worker:
+
+```bash
+docker build --target agent -t mastra-voice-agent:latest .
+```
+
+`lk agent create` has no `--target` flag, and it reuses a `Dockerfile` already sitting in the working directory rather than generating one — so left to itself it would build that server stage and deploy a container that answers no calls. Select the stage locally and hand LiveKit the finished image with `--image`. Where there is no Docker daemon, `--image-tar ./image.tar` takes an OCI tar instead.
+
+### Create the agent
+
+Secrets are uploaded ahead of the container, not mounted into it. Put them in a file of `KEY=VALUE` lines, one per line — call it `.env.livekit` and the existing `.env.*` rule already keeps it out of git:
+
+```bash
+lk agent create \
+  --image mastra-voice-agent:latest \
+  --secrets-file .env.livekit \
+  --region <region>                  # omit and it deploys to the nearest region
+```
+
+**That file needs the whole env schema, not just the LiveKit keys.** The worker imports the full Mastra app, so `src/lib/env.ts` validates everything at boot: `APP_SECRET`, all four `SUPABASE_*`, `ANTHROPIC_API_KEY`, and all three `LIVEKIT_*`. Add `DOLT_*` for the ledger and `TZ` for the agent's clock. Copying `.env` across wholesale fails twice over — its `SUPABASE_DB_URL` and `DOLT_HOST` name compose services or `127.0.0.1`, which resolve to nothing from LiveKit's side, and its blank optional entries are rejected unless you also pass `--ignore-empty-secrets`. A secret that has to arrive as a file rather than a variable goes through `--secret-mount` instead.
+
+`lk agent create` writes `livekit.toml` beside it, carrying your project subdomain and the agent id LiveKit just minted:
+
+```toml
+[project]
+  subdomain = "your-project-subdomain"
+
+[agent]
+  id = "CA_..."
+```
+
+Both values are yours, not the template's, so a committed copy would point every clone at an agent it cannot reach — which is why this repo gitignores the file instead of shipping one. Every later `lk agent` command reads the id from it; on a second machine, regenerate it with `lk agent config --id CA_...`.
+
+### Ship, rotate, watch
+
+```bash
+docker build --target agent -t mastra-voice-agent:latest .
+lk agent deploy --image mastra-voice-agent:latest                 # new version
+lk agent update-secrets --secrets-file .env.livekit --overwrite   # rotate keys
+lk agent status                    # current deployment
+lk agent logs                      # tail
+lk agent versions                  # what you can go back to
+lk agent rollback                  # go back to it
+```
+
+`update-secrets` restarts the agent, so a key rotation costs the same interruption as a deploy — drain calls the same way.
+
+### What carries over unchanged
+
+`agentName` still has to match. The dispatch rule from **Give it a phone number** names `mastra-voice`, and a Cloud Agent that registers under anything else is dispatched nothing while LiveKit accepts the call, which the caller hears as silence.
+
+**Only one worker flavor serves a call.** A Cloud Agent and your compose workers register under that same `agentName`, so running both means LiveKit round-robins calls between them — a useful cutover trick, and a bewildering bug when it isn't deliberate. Scale one to zero before depending on the other.
+
+The `agent` stage's healthcheck probes `:8081`, which is where `@livekit/agents` serves its own endpoint in production mode — not the server's `:4111/health`, which this container never serves. It returns 503 for `inference process not running`, the failure described under **Known limitations**; that check is the prerequisite for anything acting on it.
 
 ---
 
@@ -409,6 +494,8 @@ Cost is **RAM-dominated**: each concurrent call spins a job runner that re-impor
 | `runner initialization timed out` | Subprocess re-imports ~2 GB | Already raised via `initializeProcessTimeout`; if it persists the host is RAM-starved |
 | Replies lag; log shows `inference is slower than realtime` | Host RAM/CPU starved | Free RAM, set `numIdleProcesses: 0`, run the call client off-box |
 | Agent missing from Studio | Not registered in `mastra.agents` | Add it in `src/mastra/index.ts` |
+| Cloud Agent starts, exits, logs `Invalid environment variables` | The uploaded secrets file is missing keys the full env schema requires | `lk agent update-secrets --secrets-file .env.livekit --overwrite` with every required var |
+| Cloud Agent runs but never answers a call | Deployed the default Dockerfile target — that's the HTTP server, which registers no worker | Rebuild with `--target agent` and `lk agent deploy --image …` |
 
 ---
 

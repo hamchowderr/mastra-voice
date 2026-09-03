@@ -7,15 +7,24 @@
 #   APP_SECRET, POSTGRES_PASSWORD, DOLT_PASSWORD, and an LLM key
 #   (ANTHROPIC_API_KEY / OPENAI_API_KEY). See .env.example.
 
-# Shared build for the two app services (server + worker): one Dockerfile, one
-# image, built once and reused. They differ only in the command they run.
+# Shared build CONTEXT for the two app services. One Dockerfile, but two images:
+# each service builds the stage that carries only the runtime it executes, so
+# neither ships the other's ~600-840 MB. They share the base layers and the baked
+# models, so the second build is nearly free.
+#
+# `target` is therefore per-service and MANDATORY — it is no longer a safety net
+# against stage reordering but the thing that decides what is in the image. A
+# service pointed at the wrong stage will not start: the server stage has no
+# `src/`, and the agent stage has no `.mastra/output`.
 x-app-build: &app-build
   context: .
   dockerfile: Dockerfile
 
 services:
   mastra:
-    build: *app-build
+    build:
+      <<: *app-build
+      target: runtime
     image: mastra-voice:latest
     restart: unless-stopped
     # Only expose on the internal network — Coolify/Traefik routes the public
@@ -71,17 +80,22 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # LiveKit worker — the realtime audio loop. SAME image as `mastra`, just a
-  # different command. It connects OUTBOUND to LiveKit (no inbound ports, no public
-  # domain) and runs from source via tsx. Keep >=1 always-on: with zero workers a
-  # call connects to silence, and scale-to-zero deregisters it from LiveKit. Only
-  # ONE worker flavor can run at a time (they all register under the same agentName).
+  # LiveKit worker — the realtime audio loop. Its OWN image (the `agent` stage),
+  # carrying the source tree and node_modules the server image no longer holds. It
+  # connects OUTBOUND to LiveKit (no inbound ports, no public domain) and runs from
+  # source via tsx. Keep >=1 always-on: with zero workers a call connects to
+  # silence, and scale-to-zero deregisters it from LiveKit. Only ONE worker flavor
+  # can run at a time (they all register under the same agentName).
   worker:
-    build: *app-build
-    image: mastra-voice:latest
+    build:
+      <<: *app-build
+      target: agent
+    image: mastra-voice-worker:latest
     # No container_name — same host-global collision reason as the mastra service.
     restart: unless-stopped
-    command: ["node", "--import", "tsx", "src/mastra/voice-worker.ts", "start"]
+    # No `command:` override — the agent stage's CMD is already the worker. That is
+    # the point of the stage: LiveKit Cloud Agents cannot override a command, so the
+    # image has to be correct on its own, and compose gets to use the same one.
     env_file:
       - .env
     environment:
