@@ -397,12 +397,15 @@ Being honest about the holes is more useful than a longer table.
 - **The worker's own bridge is untested.** Every automated surface either bypasses
   `MastraVoiceAgent` or drives the whole stack through a real call; nothing tests
   that class in isolation.
-- **A thrown tool error reaches the model as `An internal error occurred`.**
-  LiveKit redacts the real message before the model sees it, deliberately, in case
-  it carries sensitive data. So a tool that throws descriptively leaves the agent
-  unable to tell the caller what went wrong, and the real message exists only in
-  worker logs. Tools with a known refusal path should **return** a safe string
-  rather than throw — only a throw is redacted.
+- **A thrown tool error still reaches the model as `An internal error occurred`.**
+  LiveKit redacts it before the model sees it, deliberately, in case the message
+  carries sensitive data — so a descriptive throw leaves the agent unable to tell
+  the caller what went wrong, with the real reason only in worker logs. This is
+  handled rather than open: `evaluateMath` **returns** its refusals as ordinary
+  results, and both the unit tests and the harness tier assert the words survive
+  to the model. It stays on this list because it is a trap for every tool you add
+  next — reserve `throw` for genuinely unexpected faults, where the generic string
+  is the right thing to say, and return anything the caller should hear.
 - **Memory and semantic recall have no dedicated surface.** They are exercised
   incidentally by evals and real calls.
 
