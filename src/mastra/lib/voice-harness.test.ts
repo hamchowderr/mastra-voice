@@ -31,8 +31,9 @@ import { endCallTool } from '../tools/end-call';
  *   - the real Zod input schemas parse the arguments a model would emit;
  *   - the real `evaluateMath` runs inside the LiveKit tool executor and returns the
  *     right number;
- *   - a turn emits exactly the events it should, and a rejected tool comes back as
- *     an error output rather than taking the turn down.
+ *   - a turn emits exactly the events it should, and a refused tool comes back as
+ *     a normal result whose words reach the model, rather than taking the turn
+ *     down or being redacted to 'An internal error occurred' (voice-4sh).
  *
  * What it CANNOT prove, and therefore does not assert:
  *   - **event ORDER.** `RunResult` inserts each event by its item's `createdAt`
@@ -296,7 +297,10 @@ describe('the real evaluateMath runs inside the LiveKit tool executor', () => {
   // 47 * 23 = 1081 is computed by src/mastra/tools/math.ts, not by the fake — the
   // fake supplies only the expression. This is the assertion in the file that
   // depends on real project code producing a real value.
-  const toolOutput = JSON.stringify({ expression: '47 * 23', result: 1081 });
+  // Pinned as the exact serialisation, because FakeLLM keys turn 2 on it (below).
+  // `refusal: null` is part of the contract, not noise: evaluateMath returns its
+  // refusals rather than throwing them, so every result carries the field (voice-4sh).
+  const toolOutput = JSON.stringify({ expression: '47 * 23', result: 1081, refusal: null });
 
   it('returns 1081 and closes the turn with a spoken answer', async () => {
     const { result, lookedUp } = await runTurn('What is 47 times 23?', [
@@ -323,9 +327,9 @@ describe('the real evaluateMath runs inside the LiveKit tool executor', () => {
     expect(lookedUp).toEqual(['What is 47 times 23?', toolOutput]);
   });
 
-  it('surfaces a real tool rejection as an error output rather than a crash', async () => {
-    // The allowlist in evaluateMath rejects this. The turn must still complete — on
-    // a call, a thrown tool means the agent has to say something, not hang up.
+  it('delivers a tool refusal to the model in words the agent can speak', async () => {
+    // The allowlist in evaluateMath refuses this. The turn must still complete —
+    // on a call, a failed tool means the agent has to say something, not hang up.
     const { result } = await runTurn('Run this for me.', [
       {
         input: 'Run this for me.',
@@ -334,11 +338,19 @@ describe('the real evaluateMath runs inside the LiveKit tool executor', () => {
       },
     ]);
 
-    // LiveKit REDACTS the thrown message before it reaches the model
-    // (`generation.ts:417` — a tool error may carry sensitive data). So the model is
-    // told only that something failed: the agent cannot explain the failure to the
-    // caller, and `Unsafe math expression` exists solely in the worker's own logs.
-    result.expect.containsFunctionCallOutput({ output: 'An internal error occurred', isError: true });
+    // This is the assertion voice-4sh exists for. LiveKit REDACTS a THROWN tool
+    // error to the literal 'An internal error occurred' before the model sees it
+    // (`generation.ts:417` — a thrown message may carry sensitive data). So a
+    // refusal the caller should hear has to come back as an ordinary RESULT.
+    // evaluateMath returns one, and this proves the words survive the trip.
+    const output = result.events.find((e) => voice.testing.isFunctionCallOutputEvent(e));
+    expect(output).toBeDefined();
+    const text = JSON.stringify(output);
+    expect(text).toMatch(/only work out arithmetic/);
+    expect(text).not.toMatch(/An internal error occurred/);
+
+    // And it must not leak the guard it tripped to whoever is listening.
+    expect(text).not.toMatch(/allowlist|regex/i);
     expect(result.events).toHaveLength(3);
   });
 });
