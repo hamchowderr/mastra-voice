@@ -43,6 +43,31 @@ jobs:
       # the cheapest job rather than behind the eval gate.
       - run: npm test
 
+  # voice-9jm.29 — the zero-infrastructure agent tier.
+  #
+  # This job exists to DECLARE a property, not just to run a file: it has no
+  # `services:` block, no `env:` block and no secrets, so if
+  # src/mastra/lib/voice-harness.test.ts ever grows a dependency on Postgres, on
+  # AIMock, on a LiveKit room or on a provider key, this job goes red while the
+  # eval gate stays green. `npm test` in the typecheck job runs the same file
+  # among the others; only here is the no-infrastructure claim enforced.
+  #
+  # It deliberately does NOT `needs: typecheck` — it is the cheapest signal in the
+  # workflow, so it should land as early as the runner can produce it.
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native addon build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 make g++ libasound2-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Voice harness (no database, no mock server, no key)
+        run: npm run test:harness
+
   build:
     runs-on: ubuntu-latest
     needs: typecheck
