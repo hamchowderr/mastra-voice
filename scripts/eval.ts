@@ -165,8 +165,14 @@ for (const evalCase of dataset.cases) {
         input: scoringInput as any,
         output: scoringOutput as any,
       });
-      scores.answerRelevancy = relevResult.score;
-      relevancyScores.push(relevResult.score);
+      // A scorer step can return notScorable(): then no score was produced,
+      // so record null instead of averaging a missing value into the gate.
+      if (relevResult.notScorable) {
+        scores.answerRelevancy = null;
+      } else {
+        scores.answerRelevancy = relevResult.score;
+        relevancyScores.push(relevResult.score);
+      }
     } catch (err) {
       console.error(yellow(`\n    ⚠ scorer error: ${err}`));
     }
