@@ -26,9 +26,10 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.44",
-    "@livekit/agents": "^1.7.1",
-    "@livekit/agents-plugin-livekit": "^1.7.1",
-    "@livekit/agents-plugin-silero": "^1.7.1",
+    "@livekit/agents": "^1.9.5",
+    "@livekit/agents-plugin-livekit": "^1.9.5",
+    "@livekit/agents-plugin-silero": "^1.9.5",
+    "@livekit/rtc-node": "^1.2.1",
     "@mastra/auth": "^1.1.5",
     "@mastra/core": "^1.80.0",
     "@mastra/editor": "^0.16.5",
