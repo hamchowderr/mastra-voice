@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -69,9 +70,12 @@ for (const evalCase of dataset.cases) {
     // NOTE: do NOT reach for `Parameters<typeof agent.generate>[1]` here. The
     // last `generate` overload takes only `messages`, so that lookup resolves
     // to a 1-tuple and the index is a type error.
+    // Each case is its own call: a fresh thread, like the worker mints per call.
+    // Observational memory is thread-scoped and rejects a run without one.
+    const memory = { resource: `eval-${randomUUID()}`, thread: randomUUID() };
     const generateOpts: AgentExecutionOptionsBase<unknown> = env.USE_AIMOCK
-      ? {}
-      : { returnScorerData: true };
+      ? { memory }
+      : { memory, returnScorerData: true };
 
     const result = await agent.generate(
       [{ role: 'user', content: evalCase.input }],
@@ -165,8 +169,14 @@ for (const evalCase of dataset.cases) {
         input: scoringInput as any,
         output: scoringOutput as any,
       });
-      scores.answerRelevancy = relevResult.score;
-      relevancyScores.push(relevResult.score);
+      // A scorer step can return notScorable(): then no score was produced,
+      // so record null instead of averaging a missing value into the gate.
+      if (relevResult.notScorable) {
+        scores.answerRelevancy = null;
+      } else {
+        scores.answerRelevancy = relevResult.score;
+        relevancyScores.push(relevResult.score);
+      }
     } catch (err) {
       console.error(yellow(`\n    ⚠ scorer error: ${err}`));
     }
