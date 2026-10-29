@@ -126,18 +126,18 @@ export function createDefaultMemory(
         messageRange: { before: 1, after: 1 },
         scope: 'resource',
       },
-      // Observational memory distills the conversation into dense observations. It runs
-      // at the default thread scope (one call = one thread), where distillation is
-      // buffered in the background instead of running inline on the caller's clock.
-      // `scope: 'resource'` is deprecated in @mastra/memory 1.39 (worse prompt caching),
-      // so cross-call continuity comes from `retrieval`, which gives the agent a recall
-      // tool over the caller's earlier calls, plus the resource-scoped working memory
-      // above. `model` is a fast non-reasoning one, shared by the observer and
-      // reflector. Do NOT set observation.manageWorkingMemory with resource-scoped
-      // working memory — a known core bug crashes it with "no resourceId was
-      // provided" (it defaults off, kept off here).
+      // Observational memory distills the conversation into dense observations. With
+      // scope: 'resource' it runs SYNCHRONOUSLY INLINE on the caller's clock when
+      // unobserved tokens cross `messageTokens` — there is NO background buffering at
+      // resource scope. So size `messageTokens` to EXCEED a typical call: the
+      // threshold isn't reached mid-call, and distillation lands on a LATER call
+      // instead of stalling this one (a reasoning observer model was measured at
+      // ~25s per inline fire, so `model` is a fast non-reasoning one, shared by the
+      // observer and reflector). Do NOT set observation.manageWorkingMemory with
+      // resource-scoped working memory — a known core bug crashes it with "no
+      // resourceId was provided" (it defaults off, kept off here).
       observationalMemory: {
-        retrieval: true,
+        scope: 'resource',
         model: 'anthropic/claude-haiku-4-5',
         observation: {
           messageTokens: 3000,
