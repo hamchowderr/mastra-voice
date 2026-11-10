@@ -55,19 +55,23 @@ export function resolveVoiceResourceId({ context }: ConnectionRequestArgs): stri
   const cached = requestContext?.get(RESOURCE_ID_CACHE_KEY);
   if (typeof cached === 'string' && cached.length > 0) return cached;
 
-  const user = requestContext?.get('user') as Record<string, unknown> | undefined;
-
-  // `sub` is the standard JWT subject; id/userId cover custom auth providers.
-  let resourceId = `anon-${randomUUID()}`;
-  for (const claim of [user?.sub, user?.id, user?.userId]) {
-    if (typeof claim === 'string' && claim.length > 0) {
-      resourceId = claim;
-      break;
-    }
-  }
-
+  const resourceId = verifiedResourceId(requestContext?.get('user'));
   requestContext?.set(RESOURCE_ID_CACHE_KEY, resourceId);
   return resourceId;
+}
+
+/**
+ * The resource id for a verified caller: the JWT subject (`sub`; `id`/`userId`
+ * cover custom auth providers), or a fresh anonymous id when there is no verified
+ * identity. Shared by the LiveKit connection route and the MCP ask tool, so both
+ * scope memory the same way.
+ */
+export function verifiedResourceId(user: unknown): string {
+  const claims = (user ?? {}) as Record<string, unknown>;
+  for (const claim of [claims.sub, claims.id, claims.userId]) {
+    if (typeof claim === 'string' && claim.length > 0) return claim;
+  }
+  return `anon-${randomUUID()}`;
 }
 
 /** Server-minted memory scope for one call. Nothing here is caller-controlled. */

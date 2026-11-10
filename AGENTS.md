@@ -26,7 +26,7 @@ helpers:
   otherwise not a prerequisite of this project.
 
 `livekit-simulations` is runnable: `lk` is 2.18.3 (past the v2.16.7 floor for
-Node.js agents) and `@livekit/agents ^1.7.0` clears the 1.6.0 one. Public beta,
+Node.js agents) and `@livekit/agents ^1.9.5` clears the 1.6.0 one. Public beta,
 no waitlist.
 
 Note the skill's own beta block is stale — it warns that runs need the project

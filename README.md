@@ -272,7 +272,7 @@ The worker takes either form in the same slot: `@mastra/livekit` types `stt` and
 ```bash
 # Track the @livekit/agents version already in package.json — the plugins ship
 # on the same release line (1.7.x today) and are versioned together.
-npm install @livekit/agents-plugin-deepgram@^1.7.1 @livekit/agents-plugin-cartesia@^1.7.1
+npm install @livekit/agents-plugin-deepgram@^1.9.5 @livekit/agents-plugin-cartesia@^1.9.5
 ```
 
 ```ts
