@@ -24,6 +24,7 @@ import { voiceAssistantAgent } from './agents/_example';
 import { VOICE_AGENT_NAME, resolveVoiceResourceId, resolveVoiceSessionMetadata } from './lib/voice';
 import { answerRelevancyScorer } from './scorers/_example.scorers';
 import { doltTools } from './tools/dolt';
+import { askVoiceAssistantTool } from './tools/ask-voice-assistant';
 import { ensureDatabase, doltConfigured } from './lib/dolt';
 
 // Bootstrap the versioned Dolt database on first boot (no-op if Dolt isn't configured).
@@ -38,8 +39,10 @@ const mcpServer = new MCPServer({
   description: 'MCP server exposing template-mastra-voice agents + Dolt tools',
   // Dolt versioned-data tools exposed over MCP. To let the voice agent call
   // them directly, spread `...doltTools` into the agent's own `tools`.
-  tools: { ...doltTools },
-  agents: { voiceAssistant: voiceAssistantAgent },
+  // The voice agent is exposed through askVoiceAssistantTool, not `agents:`: the
+  // built-in agent tool calls it with no thread, which thread-scoped observational
+  // memory rejects (see tools/ask-voice-assistant.ts).
+  tools: { ...doltTools, ask_voiceAssistant: askVoiceAssistantTool },
 });
 
 // One shared Postgres store for both default + editor slots. Two separate
@@ -80,6 +83,11 @@ const server = {
       participantIdentity: resolveVoiceResourceId,
     }),
   ],
+  // Core 1.83 serves Mastra's built-in MCP server at /api/mcp in production whenever
+  // server.auth is set, with every toolset by default. memory/observability expose every
+  // user's threads and traces, and `tools` exposes each agent's internal tools (here, the consent and end-call tools).
+  // Serve only agents + workflows; the explicit mcpServers entry stays as configured.
+  mcp: { toolsets: ['agents', 'workflows'] as ('agents' | 'workflows')[] },
   ...(env.MASTRA_JWT_SECRET
     ? { auth: new MastraJwtAuth({ secret: env.MASTRA_JWT_SECRET }) }
     : {}),
