@@ -23,13 +23,26 @@
  *
  * ## Why there is no default output processor
  *
- * There is no output-side token/cost cap available: `TokenLimiter` and `CostGuard`
- * both implement ONLY `processInputStep` — they bound what is sent TO the model,
- * not what comes back. `TokenLimiter` used to sit in `outputProcessors` here, where
- * it had no valid hook. @mastra/core <=1.36 ignored it silently; >=1.47 does not —
- * it wiped `result.text` and `result.steps` on every non-streaming `generate()`,
- * so the REST /generate path returned empty responses and the eval gate saw no
- * tool calls. Do not put an input-phase processor in `outputProcessors`.
+ * Not because none can work — because none is behavior-neutral enough to impose
+ * on every agent.
+ *
+ * History worth keeping: `TokenLimiter` used to sit in `outputProcessors` here
+ * when it implemented ONLY `processInputStep`, i.e. it bounded what was sent TO
+ * the model and had no valid output hook. @mastra/core <=1.36 ignored it
+ * silently; >=1.47 did not — it wiped `result.text` and `result.steps` on every
+ * non-streaming `generate()`, so REST /generate returned empty responses and the
+ * eval gate saw no tool calls. It was removed for that reason.
+ *
+ * That constraint is GONE as of core 1.56. Verified against the installed 1.63:
+ * `TokenLimiterProcessor` declares `processInputStep`, `processOutputStream` AND
+ * `processOutputResult`, counts only generated output parts, and passes tool and
+ * lifecycle chunks through untouched. An output-side cap is therefore available
+ * and is listed as opt-in below.
+ *
+ * It stays opt-in rather than default because truncating a reply mid-sentence is
+ * a product decision, not a hygiene one — and on the voice path a cut-off
+ * sentence is heard, not skimmed. Pick the limit against this agent's real
+ * responses. `CostGuardProcessor` is still input-phase only; do not put it here.
  *
  * ## What's OPT-IN (commented below) — and why it is NOT on by default
  *
@@ -48,7 +61,7 @@
  */
 
 import type { InputProcessorOrWorkflow, OutputProcessorOrWorkflow } from '@mastra/core/processors';
-import { UnicodeNormalizer } from '@mastra/core/processors';
+import { TokenLimiter, UnicodeNormalizer } from '@mastra/core/processors';
 
 // import {
 //   ModerationProcessor,
@@ -59,7 +72,6 @@ import { UnicodeNormalizer } from '@mastra/core/processors';
 //   ToolCallFilter,
 //   StructuredOutputProcessor,
 //   BatchPartsProcessor,
-//   TokenLimiter,
 //   CostGuardProcessor,
 // } from '@mastra/core/processors';
 
@@ -91,6 +103,21 @@ export const defaultOutputProcessors: OutputProcessorOrWorkflow[] = [
   // Empty by design — see "Why there is no default output processor" above.
   // Only put processors here that implement an OUTPUT phase hook
   // (processOutputResult / processOutputStream / processOutputStep).
+
+  // Deterministic runaway cap on the RESPONSE. No LLM, no added latency. Bounds
+  // both token spend and how long the agent can talk — the second matters more
+  // on a call than on a page, because the caller has to sit through it. Counts
+  // only generated output parts; tool and lifecycle chunks pass through
+  // untouched, and it emits `data-token-limit-reached` if it ever truncates.
+  //
+  // 2000 tokens is far above any correct voice reply (the agent is instructed to
+  // be terse), so this should never fire in normal operation — it exists to stop
+  // a degenerate loop, not to shape answers.
+  //
+  // Requires core >=1.56 for the output hooks. Verified behaviourally on 1.63 via
+  // scripts/probe-tokenlimiter.ts: identical text, steps and tool calls with and
+  // without it, on both generate() and stream(). See voice-9jm.27.1.
+  new TokenLimiter({ limit: 2000, strategy: 'truncate' }),
 
   // --- OPT-IN: model-backed / behavior-changing output processors ---
   // Stop system-prompt / instruction leakage in responses (one extra LLM call):

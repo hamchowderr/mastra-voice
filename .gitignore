@@ -10,7 +10,12 @@ mastra.duckdb*
 *.db-*
 .netlify
 .vercel
-.claude/
+# Claude Code: the skills in .claude/skills/ and the path-scoped rules in
+# .claude/rules/ are vendored and shared with every clone; personal settings
+# (settings.local.json) and machine state are not.
+.claude/*
+!.claude/skills/
+!.claude/rules/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
@@ -22,3 +27,6 @@ mastra.duckdb*
 SPEC/
 prompts/
 .mastracode/
+
+# Built simulation config — authored.yaml and risks.yaml are the sources
+simulations/scenarios.yaml

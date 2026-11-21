@@ -1,42 +1,113 @@
 {
   "fixtures": [
     {
-      "match": { "userMessage": "What time is it right now?", "hasToolResult": false },
+      "match": {
+        "userMessage": "store a summary",
+        "hasToolResult": false
+      },
       "response": {
-        "toolCalls": [{ "name": "getCurrentTime", "arguments": {} }]
+        "toolCalls": [
+          {
+            "name": "recordConsent",
+            "arguments": {
+              "item": "summaryStorage",
+              "granted": true
+            }
+          }
+        ]
       }
     },
     {
-      "match": { "userMessage": "What time is it right now?", "hasToolResult": true },
-      "response": { "content": "Sure, let me check. It's currently mid-morning." }
-    },
-    {
-      "match": { "userMessage": "47 times 23", "hasToolResult": false },
+      "match": {
+        "userMessage": "store a summary",
+        "hasToolResult": true
+      },
       "response": {
-        "toolCalls": [{ "name": "evaluateMath", "arguments": { "expression": "47 * 23" } }]
+        "content": "Thank you, I have recorded that."
       }
     },
     {
-      "match": { "userMessage": "47 times 23", "hasToolResult": true },
-      "response": { "content": "47 times 23 is 1081." }
-    },
-    {
-      "match": { "userMessage": "fifteen and twenty-seven", "hasToolResult": false },
+      "match": {
+        "userMessage": "47 times 23",
+        "hasToolResult": false
+      },
       "response": {
-        "toolCalls": [{ "name": "evaluateMath", "arguments": { "expression": "15 + 27" } }]
+        "toolCalls": [
+          {
+            "name": "evaluateMath",
+            "arguments": {
+              "expression": "47 * 23"
+            }
+          }
+        ]
       }
     },
     {
-      "match": { "userMessage": "fifteen and twenty-seven", "hasToolResult": true },
-      "response": { "content": "Fifteen plus twenty-seven is 42." }
+      "match": {
+        "userMessage": "47 times 23",
+        "hasToolResult": true
+      },
+      "response": {
+        "content": "47 times 23 is 1081."
+      }
     },
     {
-      "match": { "userMessage": "Hi, how are you?" },
-      "response": { "content": "I'm doing well, thanks! How can I help you today?" }
+      "match": {
+        "userMessage": "fifteen and twenty-seven",
+        "hasToolResult": false
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "name": "evaluateMath",
+            "arguments": {
+              "expression": "15 + 27"
+            }
+          }
+        ]
+      }
     },
     {
-      "match": { "userMessage": "Goodbye" },
-      "response": { "content": "You're welcome! Goodbye!" }
+      "match": {
+        "userMessage": "fifteen and twenty-seven",
+        "hasToolResult": true
+      },
+      "response": {
+        "content": "Fifteen plus twenty-seven is 42."
+      }
+    },
+    {
+      "match": {
+        "userMessage": "Hi, how are you?"
+      },
+      "response": {
+        "content": "I'm doing well, thanks! How can I help you today?"
+      }
+    },
+    {
+      "match": {
+        "userMessage": "Goodbye"
+      },
+      "response": {
+        "content": "You're welcome! Goodbye!",
+        "toolCalls": [
+          {
+            "name": "endCall",
+            "arguments": {
+              "reason": "caller said goodbye"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "match": {
+        "userMessage": "What time is it right now?",
+        "hasToolResult": false
+      },
+      "response": {
+        "content": "It's just after ten in the morning."
+      }
     }
   ]
 }

@@ -39,6 +39,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run typecheck
+      # Unit tests need no database, no API key and no Docker, so they belong in
+      # the cheapest job rather than behind the eval gate.
+      - run: npm test
 
   build:
     runs-on: ubuntu-latest
@@ -122,7 +125,6 @@ jobs:
           SUPABASE_DB_URL: postgres://postgres:postgres@localhost:5432/mastra
           ANTHROPIC_API_KEY: stub
           OPENAI_API_KEY: stub
-          GOOGLE_GENERATIVE_AI_API_KEY: stub
           LIVEKIT_URL: wss://stub.livekit.cloud
           LIVEKIT_API_KEY: stub
           LIVEKIT_API_SECRET: stub
