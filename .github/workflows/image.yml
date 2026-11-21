@@ -1,0 +1,40 @@
+name: image
+
+# Publishes the voice worker (the Dockerfile's `agent` stage) to GHCR, tagged with
+# the commit, so a server only pulls a finished image and never builds one.
+# Pull requests are covered by ci.yml's docker job, which builds and smoke-tests
+# the same stage.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: agent
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          tags: ghcr.io/${{ github.repository_owner }}/mastra-voice-worker:sha-${{ github.sha }}

@@ -1,0 +1,11 @@
+# Run the worker from the image GitHub published instead of building it here:
+#
+#   MASTRA_VOICE_SHA=<commit> docker compose -f docker-compose.yml -f compose.vps.yml \
+#     up -d --no-build --no-deps worker
+#
+# Check out the same commit first so the compose files match the image.
+# --no-deps leaves postgres and dolt (and their volumes) running as they are.
+services:
+  worker:
+    build: !reset null
+    image: ${MASTRA_VOICE_IMAGE:-ghcr.io/hamchowderr/mastra-voice-worker}:sha-${MASTRA_VOICE_SHA:?set MASTRA_VOICE_SHA to the commit to run}
