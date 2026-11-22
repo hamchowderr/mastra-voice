@@ -4,8 +4,13 @@
 #     up -d --no-build --no-deps worker
 #
 # Check out the same commit first so the compose files match the image.
-# --no-deps leaves postgres and dolt (and their volumes) running as they are.
+# --no-deps leaves postgres and dolt (and their volumes) running as they are; their
+# memory caps below apply whenever they are next created.
 services:
   worker:
     build: !reset null
     image: ${MASTRA_VOICE_IMAGE:-ghcr.io/hamchowderr/mastra-voice-worker}:sha-${MASTRA_VOICE_SHA:?set MASTRA_VOICE_SHA to the commit to run}
+  postgres:
+    mem_limit: 512m
+  dolt:
+    mem_limit: 512m
